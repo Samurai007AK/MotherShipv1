@@ -1,0 +1,75 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "productName": "Mothership",
+  "version": "0.1.0",
+  "identifier": "com.mothership.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Mothership — AI Control Center",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 600,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "../sidecars/hello-bridge"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "languages": ["English"],
+        "headerImage": "icons/128x128.png",
+        "sidebarImage": "icons/128x128.png",
+        "startAppShortcut": true,
+        "desktopShortcut": true,
+        "shortcutName": "Mothership"
+      },
+      "msi": {
+        "upgradeCode": "A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+      }
+    },
+    "category": "DeveloperTool",
+    "shortDescription": "Desktop AI Control Center",
+    "longDescription": "Mothership unifies browser-based and local AI agents into one memory-aware workspace with isolated terminal sessions, shared context, and session handoff.",
+    "copyright": "© 2026 Mothership. All rights reserved.",
+    "homepage": "https://github.com/mothership/mothership",
+    "author": "Mothership Team"
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": true,
+      "endpoints": [
+        "https://github.com/mothership/mothership/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHJlcXVpcmVkCg=="
+    }
+  }
+}

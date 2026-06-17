@@ -1,0 +1,45 @@
+# --- Rust / Tauri ---
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# --- Node / Vite ---
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# --- Playwright ---
+playwright-report/
+test-results/
+playwright-results.xml
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+nul
+NUL
+
+# --- IDE ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# --- Environment ---
+.env
+.env.local
+.env.*.local
+
+# --- Logs ---
+*.log
+npm-debug.log*

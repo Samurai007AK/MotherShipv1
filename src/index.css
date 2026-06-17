@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Brand */
+    --color-mothership-primary: #4c6ef5;
+    --color-mothership-accent: #748ffc;
+
+    /* Backgrounds (RGB for opacity support) */
+    --color-bg-rgb: 255, 255, 255;
+    --color-card-rgb: 244, 244, 245;
+    --color-surface-rgb: 255, 255, 255;
+    --color-surface-hover-rgb: 228, 228, 231;
+
+    /* Borders (RGB for opacity support) */
+    --color-border-rgb: 228, 228, 231;
+    --color-border-strong-rgb: 212, 212, 216;
+
+    /* Text */
+    --color-text: #18181b;
+    --color-text-dim: #3f3f46;
+    --color-muted: #71717a;
+    --color-muted-light: #a1a1aa;
+
+    /* Focus ring */
+    --color-ring: #4c6ef5;
+  }
+
+  .dark {
+    /* Brand */
+    --color-mothership-primary: #4c6ef5;
+    --color-mothership-accent: #748ffc;
+
+    /* Backgrounds (RGB for opacity support) */
+    --color-bg-rgb: 9, 9, 11;
+    --color-card-rgb: 24, 24, 27;
+    --color-surface-rgb: 39, 39, 42;
+    --color-surface-hover-rgb: 63, 63, 70;
+
+    /* Borders (RGB for opacity support) */
+    --color-border-rgb: 39, 39, 42;
+    --color-border-strong-rgb: 63, 63, 70;
+
+    /* Text */
+    --color-text: #fafafa;
+    --color-text-dim: #d4d4d8;
+    --color-muted: #a1a1aa;
+    --color-muted-light: #71717a;
+
+    /* Focus ring */
+    --color-ring: #4c6ef5;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      'Helvetica Neue', Arial, sans-serif;
+    background-color: rgb(var(--color-bg-rgb));
+    color: var(--color-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Scrollbar styling — dark */
+  .dark ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .dark ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    @apply bg-zinc-700 rounded-full;
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    @apply bg-zinc-600;
+  }
+
+  /* Scrollbar styling — light */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-zinc-300 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-zinc-400;
+  }
+}
+
+/* Selection */
+::selection {
+  @apply bg-mothership-600/30;
+}
+
+.dark ::selection {
+  color: var(--color-text);
+}
+
+/* Focus ring */
+*:focus-visible {
+  @apply outline-none ring-2 ring-mothership-500/50 ring-offset-2;
+  --tw-ring-offset-color: rgb(var(--color-bg-rgb));
+}
+
+/* Animation keyframes */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Tooltip animation */
+@keyframes tooltip-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-tooltip-in {
+  animation: tooltip-in 0.15s ease-out forwards;
+}
+
+/* Transition for theme switching */
+html.transitioning * {
+  transition-duration: 200ms !important;
+  transition-property: background-color, color, border-color, box-shadow !important;
+}
