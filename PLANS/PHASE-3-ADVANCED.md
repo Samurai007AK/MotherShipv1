@@ -113,6 +113,38 @@ Phase 3 transforms Mothership from a useful tool into a powerful platform. Brows
 
 ---
 
+## Sub-Phase 3.6: Enhanced Execution Engine
+
+**Time:** 6-8 hours ✅ COMPLETE
+**Gate:** Multiple agents execute in parallel with shared context
+
+### What Was Built
+
+1. **Rust execution_engine module** (`src-tauri/src/execution_engine/mod.rs`):
+   - `ExecutionEngine` struct with `start_group()`, `cancel_group()`, `add_context()`, `get_group()`, `list_groups()`
+   - `execute_group()` — spawns all agents concurrently using `futures::future::join_all`
+   - `execute_agent()` — spawns a PTY session via TerminalManager, sends prompt with shared context, monitors output, closes session on completion
+   - `SharedContextEntry` bus — agents read initial context; additional context can be injected mid-execution
+   - Tauri event bridging via `app.emit()` (execution-output, execution-status, execution-context)
+
+2. **IPC commands** (`src-tauri/src/execution_engine/commands.rs`):
+   - `start_execution_group`, `get_execution_group`, `list_execution_groups`, `cancel_execution_group`, `add_execution_context`
+
+3. **Frontend store** (`src/stores/executionEngineStore.ts`):
+   - Zustand store with polling mechanism (1s interval)
+   - `startGroup`, `getGroup`, `listGroups`, `cancelGroup`, `addContext`, `clearCompleted`
+   - Full TypeScript types mirroring Rust structs
+
+4. **UI component** (`src/components/execution/ExecutionPanel.tsx`):
+   - `NewExecutionForm` — agent selection, prompt input, shared context, name
+   - `GroupCard` — status indicator, duration, per-agent expandable results, shared context display, live context injection
+   - `AgentRow` — expandable view with prompt, output, error, copy button
+   - Integrated as `'execution'` tab in MemoryPanel
+
+5. **PTY cleanup**: Sessions are closed on both success and error paths
+
+---
+
 ## Phase 3 Deliverable Checklist
 
 - [ ] Embedded WebView for browser-based agents — (3.1)
@@ -125,6 +157,7 @@ Phase 3 transforms Mothership from a useful tool into a powerful platform. Brows
 - [ ] Side-by-side comparison panels — (3.4a)
 - [ ] Task chaining — (3.4b)
 - [ ] MCP tool registry — (3.5)
+- [x] Enhanced Execution Engine — (3.6)
 
 ---
 

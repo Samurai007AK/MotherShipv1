@@ -158,13 +158,112 @@ fn get_cold_storage_dir() -> std::path::PathBuf {
         .join("cold")
 }
 
+// -----------------------------------------------------------------------
+// Episode Memory Commands (Auto-Captured Tier)
+// -----------------------------------------------------------------------
+
+/// Save an episode entry (auto-captured interaction segment).
+#[tauri::command]
+pub async fn save_episode_memory(
+    episode: EpisodeEntry,
+    state: State<'_, MemoryStore>,
+) -> Result<Vec<ReconsolidationFlag>, String> {
+    state.save_episode(&episode)?;
+    // Run conflict detection after saving
+    state.detect_conflicts(&episode)
+}
+
+/// Query episode entries with optional filters.
+#[tauri::command]
+pub async fn query_episode_memory(
+    agent_id: Option<String>,
+    trigger: Option<String>,
+    source: Option<String>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+    state: State<'_, MemoryStore>,
+) -> Result<Vec<EpisodeEntry>, String> {
+    state.query_episodes(
+        agent_id.as_deref(),
+        trigger.as_deref(),
+        source.as_deref(),
+        limit.unwrap_or(50),
+        offset.unwrap_or(0),
+    )
+}
+
+/// Delete an episode entry.
+#[tauri::command]
+pub async fn delete_episode_memory(
+    id: String,
+    state: State<'_, MemoryStore>,
+) -> Result<(), String> {
+    state.delete_episode(&id)
+}
+
+/// Promote an episode entry to curated note memory.
+#[tauri::command]
+pub async fn promote_episode_memory(
+    episode_id: String,
+    state: State<'_, MemoryStore>,
+) -> Result<MemoryEntry, String> {
+    state.promote_episode(&episode_id)
+}
+
+/// Prune expired episode entries.
+#[tauri::command]
+pub async fn prune_expired_episodes(
+    state: State<'_, MemoryStore>,
+) -> Result<u32, String> {
+    state.prune_expired_episodes()
+}
+
+/// Get episode memory summary statistics.
+#[tauri::command]
+pub async fn get_episode_memory_stats(
+    state: State<'_, MemoryStore>,
+) -> Result<(u32, u32), String> {
+    state.episode_count()
+}
+
+// -----------------------------------------------------------------------
+// Reconsolidation Commands
+// -----------------------------------------------------------------------
+
+/// List reconsolidation flags (potential conflicts).
+#[tauri::command]
+pub async fn list_reconsolidation_flags(
+    status: Option<String>,
+    limit: Option<u32>,
+    state: State<'_, MemoryStore>,
+) -> Result<Vec<ReconsolidationFlag>, String> {
+    state.list_reconsolidation_flags(status.as_deref(), limit.unwrap_or(50))
+}
+
+/// Resolve a reconsolidation flag.
+#[tauri::command]
+pub async fn resolve_reconsolidation_flag(
+    flag_id: String,
+    resolution: String,
+    state: State<'_, MemoryStore>,
+) -> Result<(), String> {
+    state.resolve_flag(&flag_id, &resolution)
+}
+
 /// Save a context snapshot from the event-driven capture system.
+/// Now saves as an EpisodeEntry (auto-captured tier with TTL) instead of
+/// a direct MemoryEntry. Episodes expire after 30 days and can be promoted
+/// to note memory if the user wants to keep them.
 #[tauri::command]
 pub async fn save_context_snapshot(
     snapshot: ContextSnapshotData,
     state: State<'_, MemoryStore>,
-) -> Result<(), String> {
-    let now = chrono::Utc::now().to_rfc3339();
+) -> Result<Vec<ReconsolidationFlag>, String> {
+    let now = chrono::Utc::now();
+    let created_at = now.to_rfc3339();
+    let expires_at = now
+        .checked_add_signed(chrono::Duration::days(30))
+        .map(|dt| dt.to_rfc3339());
 
     // Build content from snapshot
     let mut content_parts = Vec::new();
@@ -190,19 +289,32 @@ pub async fn save_context_snapshot(
 
     let content = content_parts.join("\n");
 
-    let entry = MemoryEntry {
+    // Build metadata as JSON blob (use references to avoid moving strings)
+    let metadata = serde_json::json!({
+        "trigger": &snapshot.trigger,
+        "branch": &snapshot.branch,
+        "decisions_count": snapshot.decisions.len(),
+        "files_count": snapshot.open_files.len(),
+        "output_tail_length": snapshot.output_tail.len(),
+        "memory_size": snapshot.memory_size,
+    });
+
+    let episode = EpisodeEntry {
         id: uuid::Uuid::new_v4().to_string(),
+        agent_id: Some(snapshot.agent_id.clone()),
+        trigger: snapshot.trigger,
         content,
-        agent_id: Some(snapshot.agent_id),
-        entry_type: EntryType::Output,
-        tags: vec![format!("capture:{}", snapshot.trigger)],
         summary: None,
-        files_referenced: snapshot.open_files,
-        created_at: now.clone(),
-        updated_at: now,
+        source: "context_capture".to_string(),
+        metadata: metadata.to_string(),
+        created_at: created_at.clone(),
+        expires_at,
+        is_promoted: false,
     };
 
-    state.save_entry(&entry)
+    state.save_episode(&episode)?;
+    // Run reconsolidation conflict detection against existing notes
+    state.detect_conflicts(&episode)
 }
 
 /// Data payload for context snapshot capture.

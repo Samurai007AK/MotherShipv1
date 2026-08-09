@@ -2,10 +2,14 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useAgentStore, getProviderColor, type Agent } from '../../stores/agentStore'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
+import { useWorktreeStore } from '../../stores/worktreeStore'
 import { useMemoryStore } from '../../stores/memoryStore'
 import { SplitPaneContainer } from '../terminal/SplitPane'
 import { TerminalPane, type TerminalPaneHandle } from '../terminal/TerminalPane'
-import { X, Terminal, SplitSquareHorizontal, Paperclip } from 'lucide-react'
+import { WorktreeManager } from './WorktreeManager'
+import { WelcomeScreen } from './WelcomeScreen'
+import { EditorPanel } from '../editor/EditorPanel'
+import { X, Terminal, SplitSquareHorizontal, Paperclip, GitBranch, FileCode } from 'lucide-react'
 
 // --- Tab Bar ---
 
@@ -68,65 +72,13 @@ function TabBar() {
   )
 }
 
-// --- Empty State ---
-
-function EmptyState() {
-  const { agents, activeAgentId, setActiveAgent } = useAgentStore()
-  const { addTab } = useWorkspaceStore()
-
-  const handleOpenTerminal = (agent: Agent) => {
-    setActiveAgent(agent.id)
-    addTab(agent.id, agent.name, agent.provider)
-  }
-
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center text-c-muted">
-      <Terminal className="w-12 h-12 mb-4 text-c-muted-light" />
-      <h2 className="text-sm font-medium text-c-muted mb-1">No Active Workspace</h2>
-      <p className="text-xs text-c-muted-light mb-6 max-w-xs text-center">
-        Select an agent from the sidebar or open a terminal to get started.
-      </p>
-
-      <div className="grid grid-cols-2 gap-2 max-w-sm">
-        {agents.slice(0, 4).map((agent) => (
-          <button
-            key={agent.id}
-            onClick={() => handleOpenTerminal(agent)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-c-border hover:border-c-border-strong hover:bg-c-surface/50 transition-all text-left ${
-              activeAgentId === agent.id ? 'border-mothership-500/50 bg-c-surface/30' : ''
-            }`}
-          >
-            <span
-              className={`w-2 h-2 rounded-full flex-shrink-0 ${getProviderColor(agent.provider)}`}
-            />
-            <div className="min-w-0">
-              <div className="text-xs font-medium text-c-text-dim truncate">{agent.name}</div>
-              <div className="text-[10px] text-c-muted-light truncate">{agent.status}</div>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-6 text-[10px] text-c-muted-light flex items-center gap-3">
-        <span className="flex items-center gap-1">
-          <kbd className="px-1 py-0.5 bg-c-surface rounded text-[9px] font-mono">Ctrl+T</kbd>
-          new terminal
-        </span>
-        <span className="flex items-center gap-1">
-          <kbd className="px-1 py-0.5 bg-c-surface rounded text-[9px] font-mono">Ctrl+\</kbd>
-          split pane
-        </span>
-      </div>
-    </div>
-  )
-}
-
 // --- Main Component ---
 
 export function WorkspaceView() {
   const { tabs, activeTabId, addSplitPane, getSplitPanes } = useWorkspaceStore()
   const agents = useAgentStore((s) => s.agents)
   const addNote = useMemoryStore((s) => s.addNote)
+  const { workspaceView, setWorkspaceView } = useWorktreeStore()
   const terminalRefs = useRef<Map<string, TerminalPaneHandle>>(new Map())
   const spawnedRef = useRef<Set<string>>(new Set())
   const dragCounterRef = useRef(0)
@@ -197,7 +149,29 @@ export function WorkspaceView() {
         }
       }
 
-      // Ctrl+T or Cmd+T — new terminal for active agent (handled by sidebar)
+      // Ctrl+T or Cmd+T — new terminal for the currently active agent
+      if ((e.ctrlKey || e.metaKey) && e.key === 't') {
+        e.preventDefault()
+        const agentStore = useAgentStore.getState()
+        const activeAgent = agentStore.activeAgentId
+          ? agentStore.agents.find((a) => a.id === agentStore.activeAgentId)
+          : null
+        if (activeAgent) {
+          // If this agent already has a tab, just switch to it
+          const tabsState = useWorkspaceStore.getState().tabs
+          const existingTab = tabsState.find((t) => t.agentId === activeAgent.id)
+          if (existingTab) {
+            useWorkspaceStore.getState().setActiveTab(activeAgent.id)
+          } else {
+            useWorkspaceStore.getState().addTab(
+              activeAgent.id,
+              activeAgent.name,
+              activeAgent.provider,
+            )
+          }
+        }
+      }
+
       // Ctrl+W or Cmd+W — close current tab
       if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
         e.preventDefault()
@@ -257,6 +231,9 @@ export function WorkspaceView() {
     const currentAgent = useAgentStore.getState().activeAgentId
     if (!currentAgent) return
 
+    // Determine the target directory from the first dropped file
+    let targetDir: string | null = null
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       // Note: In Tauri, file.path gives the full path
@@ -277,9 +254,29 @@ export function WorkspaceView() {
           currentAgent,
           ['file-attachment', attached.filename.split('.').pop() || '']
         )
+
+        // Use the directory of the first file for CWD update
+        if (i === 0 && attached.directory) {
+          targetDir = attached.directory
+        }
       } catch (err) {
         console.error('Failed to attach file:', err)
       }
+    }
+
+    // Update terminal CWD to the file's directory
+    if (targetDir) {
+      const handle = terminalRefs.current.get(currentAgent)
+      const sid = handle?.sessionId
+
+      if (sid) {
+        // Send cd command to the running shell with path quoted for spaces
+        invoke('write_terminal_input', { sessionId: sid, data: `cd "${targetDir}"\n` })
+          .catch((e) => console.error('Failed to cd in terminal:', e))
+      }
+
+      // Update the tab's workingDir for future sessions
+      useWorkspaceStore.getState().setWorkingDir(currentAgent, targetDir)
     }
   }, [addNote])
 
@@ -302,11 +299,50 @@ export function WorkspaceView() {
         </div>
       )}
 
-      {/* Tab bar */}
-      <TabBar />
+      {/* View toggle + Tab bar */}
+      {workspaceView === 'terminal' && <TabBar />}
+      <div className="flex items-center border-b border-c-border bg-c-card px-2 py-1 gap-2">
+        <button
+          onClick={() => setWorkspaceView('terminal')}
+          className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded transition-colors ${
+            workspaceView === 'terminal'
+              ? 'bg-mothership-500/15 text-mothership-400 font-medium'
+              : 'text-c-muted-light hover:text-c-text hover:bg-c-surface/50'
+          }`}
+        >
+          <Terminal className="w-3 h-3" />
+          Terminals
+        </button>
+        <button
+          onClick={() => setWorkspaceView('worktrees')}
+          className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded transition-colors ${
+            workspaceView === 'worktrees'
+              ? 'bg-mothership-500/15 text-mothership-400 font-medium'
+              : 'text-c-muted-light hover:text-c-text hover:bg-c-surface/50'
+          }`}
+        >
+          <GitBranch className="w-3 h-3" />
+          Worktrees
+        </button>
+        <button
+          onClick={() => setWorkspaceView('editor')}
+          className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded transition-colors ${
+            workspaceView === 'editor'
+              ? 'bg-mothership-500/15 text-mothership-400 font-medium'
+              : 'text-c-muted-light hover:text-c-text hover:bg-c-surface/50'
+          }`}
+        >
+          <FileCode className="w-3 h-3" />
+          Editor
+        </button>
+      </div>
 
       {/* Content */}
-      {tabs.length > 0 ? (
+      {workspaceView === 'editor' ? (
+        <EditorPanel />
+      ) : workspaceView === 'worktrees' ? (
+        <WorktreeManager />
+      ) : tabs.length > 0 ? (
         <div className="flex-1 relative">
           {tabs.map((tab) => {
             const isVisible = tab.agentId === activeTabId
@@ -326,27 +362,45 @@ export function WorkspaceView() {
                   <SplitPaneContainer
                     tabId={tab.agentId}
                     primaryAgentId={tab.agentId}
+                    primaryWorkingDir={tab.workingDir}
                     splitPanes={splitPanes}
                     visible={isVisible}
                     onRegisterRef={registerRef}
-                    onExit={(agentId) => {
+                    onExit={(agentId, code) => {
                       useWorkspaceStore.getState().setConnected(agentId, false)
+                      if (code !== 0) {
+                        useAgentStore.getState().updateAgentStatus(agentId, 'error')
+                      }
                     }}
                     onError={(agentId, message) => {
                       console.error(`Terminal error for ${agentId}:`, message)
+                      useWorkspaceStore.getState().setTabConnected(agentId, false)
+                      useAgentStore.getState().updateAgentStatus(agentId, 'error')
+                    }}
+                    onReconnect={(agentId) => {
+                      useWorkspaceStore.getState().setConnected(agentId, true)
                     }}
                   />
                 ) : (
                   <TerminalPane
                     agentId={tab.agentId}
                     visible={isVisible}
+                    workingDir={tab.workingDir}
                     model={agents.find((a) => a.id === tab.agentId)?.model}
                     ref={(handle) => registerRef(tab.agentId, handle)}
-                    onExit={() => {
+                    onExit={(code) => {
                       useWorkspaceStore.getState().setConnected(tab.agentId, false)
+                      if (code !== 0) {
+                        useAgentStore.getState().updateAgentStatus(tab.agentId, 'error')
+                      }
                     }}
                     onError={(message) => {
                       console.error(`Terminal error for ${tab.agentId}:`, message)
+                      useWorkspaceStore.getState().setTabConnected(tab.agentId, false)
+                      useAgentStore.getState().updateAgentStatus(tab.agentId, 'error')
+                    }}
+                    onReconnect={() => {
+                      useWorkspaceStore.getState().setConnected(tab.agentId, true)
                     }}
                   />
                 )}
@@ -355,7 +409,7 @@ export function WorkspaceView() {
           })}
         </div>
       ) : (
-        <EmptyState />
+        <WelcomeScreen />
       )}
     </main>
   )

@@ -100,4 +100,7 @@ pub enum CommitGuardError {
 
     #[error("Quality gate error: {0}")]
     QualityGate(#[from] QualityGateError),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }

@@ -14,44 +14,28 @@ Commands:
 
 import sys
 import json
-import signal
 import logging
 import os
 import urllib.request
 import urllib.error
 from typing import Optional
 
+# Ensure shared package is importable regardless of working directory
+_this_dir = os.path.dirname(os.path.abspath(__file__))
+_shared_parent = os.path.abspath(os.path.join(_this_dir, '..'))
+if _shared_parent not in sys.path:
+    sys.path.insert(0, _shared_parent)
+
+from shared.json_rpc_sidecar import JsonRpcSidecar
+
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger("summary-engine")
 
-running = True
+sidecar = JsonRpcSidecar("summary-engine", logger)
+
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 DEFAULT_MODEL = "llama3.2:3b"
 FALLBACK_MODEL = "llama3.1:8b"
-
-
-def handle_signal(signum, frame):
-    global running
-    logger.info("Received signal %s, shutting down...", signum)
-    running = False
-
-
-signal.signal(signal.SIGINT, handle_signal)
-signal.signal(signal.SIGTERM, handle_signal)
-
-
-def make_response(result, req_id=None):
-    resp = {"jsonrpc": "2.0", "result": result}
-    if req_id is not None:
-        resp["id"] = req_id
-    return resp
-
-
-def make_error(message, code=-32603, req_id=None):
-    resp = {"jsonrpc": "2.0", "error": {"code": code, "message": message}}
-    if req_id is not None:
-        resp["id"] = req_id
-    return resp
 
 
 def check_ollama_available() -> bool:
@@ -77,15 +61,12 @@ def get_available_models() -> list[str]:
 
 def select_model(available_models: list[str]) -> str:
     """Select the best available model."""
-    # Try default first
     for model in available_models:
         if DEFAULT_MODEL in model:
             return model
-    # Try fallback
     for model in available_models:
         if FALLBACK_MODEL in model:
             return model
-    # Use whatever is available
     if available_models:
         return available_models[0]
     return DEFAULT_MODEL
@@ -110,7 +91,6 @@ def format_snapshots(snapshots: list[dict]) -> str:
         if files:
             part += f"\nFiles: {', '.join(files)}"
         if output:
-            # Truncate output for LLM context
             truncated = output[:2000] if len(output) > 2000 else output
             part += f"\nOutput:\n{truncated}"
         parts.append(part)
@@ -182,7 +162,6 @@ def parse_llm_response(response: str) -> dict:
         if not line:
             continue
 
-        # Detect section headers
         upper = line.upper()
         if upper.startswith("OVERVIEW:"):
             current_section = "overview"
@@ -206,7 +185,6 @@ def parse_llm_response(response: str) -> dict:
             current_section = "state"
             result["current_state"] = line[len("STATE:"):].strip()
         elif line.startswith("- ") or line.startswith("* "):
-            # Bullet point — append to current section
             item = line[2:].strip()
             if current_section == "decisions":
                 result["key_decisions"].append(item)
@@ -219,7 +197,6 @@ def parse_llm_response(response: str) -> dict:
         elif current_section == "state":
             result["current_state"] += " " + line
 
-    # Fallback: if no structured sections found, use the whole response as summary
     if not result["summary"] and not result["key_decisions"]:
         result["summary"] = response[:500]
 
@@ -261,98 +238,53 @@ def template_summary(snapshots: list[dict]) -> dict:
     }
 
 
-def handle_request(req):
-    method = req.get("method", "")
-    params = req.get("params", {})
-    req_id = req.get("id")
+@sidecar.method("summarize")
+def handle_summarize(params: dict, req_id):
+    snapshots = params.get("context_snapshots", [])
+    handoff_target = params.get("handoff_target", "next agent")
+    style = params.get("style", "brief")
 
-    if method == "summarize":
-        snapshots = params.get("context_snapshots", [])
-        handoff_target = params.get("handoff_target", "next agent")
-        style = params.get("style", "brief")
-
-        if not snapshots:
-            return make_response({
-                "summary": "No context snapshots provided",
-                "key_decisions": [],
-                "open_todos": [],
-                "files_touched": [],
-                "current_state": "Empty session",
-            }, req_id)
-
-        snapshots_text = format_snapshots(snapshots)
-
-        # Try Ollama first
-        if check_ollama_available():
-            models = get_available_models()
-            model = select_model(models)
-            logger.info("Using Ollama model: %s", model)
-
-            result = generate_summary_ollama(snapshots_text, model)
-            if result:
-                result["model_used"] = model
-                return make_response(result, req_id)
-
-        # Fallback to template
-        logger.info("Using template-based summary (Ollama unavailable)")
-        result = template_summary(snapshots)
-        result["model_used"] = "template"
-        return make_response(result, req_id)
-
-    elif method == "health":
-        ollama_available = check_ollama_available()
-        models = get_available_models() if ollama_available else []
-        return make_response({
-            "status": "healthy",
-            "ollama_available": ollama_available,
-            "models": models,
-            "pid": os.getpid(),
+    if not snapshots:
+        return sidecar.ok({
+            "summary": "No context snapshots provided",
+            "key_decisions": [],
+            "open_todos": [],
+            "files_touched": [],
+            "current_state": "Empty session",
         }, req_id)
 
-    elif method == "shutdown":
-        global running
-        running = False
-        return make_response({"status": "shutting down"}, req_id)
+    snapshots_text = format_snapshots(snapshots)
 
-    else:
-        return make_error(f"Unknown method: {method}", -32601, req_id)
+    # Try Ollama first
+    if check_ollama_available():
+        models = get_available_models()
+        model = select_model(models)
+        logger.info("Using Ollama model: %s", model)
+
+        result = generate_summary_ollama(snapshots_text, model)
+        if result:
+            result["model_used"] = model
+            return sidecar.ok(result, req_id)
+
+    # Fallback to template
+    logger.info("Using template-based summary (Ollama unavailable)")
+    result = template_summary(snapshots)
+    result["model_used"] = "template"
+    return sidecar.ok(result, req_id)
 
 
-def main():
-    logger.info("summary-engine started (pid=%d)", os.getpid())
-
-    # Send ready signal
-    ready = {"jsonrpc": "2.0", "method": "ready", "params": {"pid": os.getpid()}}
-    sys.stdout.write(json.dumps(ready) + "\n")
-    sys.stdout.flush()
-
-    while running:
-        try:
-            line = sys.stdin.readline()
-            if not line:
-                break
-
-            line = line.strip()
-            if not line:
-                continue
-
-            req = json.loads(line)
-            resp = handle_request(req)
-            sys.stdout.write(json.dumps(resp) + "\n")
-            sys.stdout.flush()
-
-        except json.JSONDecodeError as e:
-            err = make_error(f"Invalid JSON: {e}")
-            sys.stdout.write(json.dumps(err) + "\n")
-            sys.stdout.flush()
-        except Exception as e:
-            logger.error("Error: %s", e)
-            err = make_error(str(e))
-            sys.stdout.write(json.dumps(err) + "\n")
-            sys.stdout.flush()
-
-    logger.info("summary-engine exited")
+# Override the built-in health handler to include Ollama info
+@sidecar.method("health")
+def handle_health(params: dict, req_id):
+    ollama_available = check_ollama_available()
+    models = get_available_models() if ollama_available else []
+    return sidecar.ok({
+        "status": "healthy",
+        "ollama_available": ollama_available,
+        "models": models,
+        "pid": os.getpid(),
+    }, req_id)
 
 
 if __name__ == "__main__":
-    main()
+    sidecar.run()

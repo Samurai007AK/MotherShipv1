@@ -12,7 +12,11 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    environment: 'jsdom',
+    environment: 'happy-dom',
+    pool: 'forks',
+    forks: {
+      singleFork: true,
+    },
     setupFiles: ['./src/test/setup.ts'],
     css: true,
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],

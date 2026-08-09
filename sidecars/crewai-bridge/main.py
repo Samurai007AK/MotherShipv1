@@ -11,22 +11,22 @@ Commands:
   - handoff: Run CrewAI Flow to analyze and summarize handoff context
   - health: Check if the sidecar is running
   - shutdown: Exit gracefully
-
-Usage:
-  python main.py
-
-Flow:
-  1. Receives handoff request with source/target agent IDs and context entries
-  2. Runs a CrewAI Flow: receive → analyze → route → enrich/direct → finalize
-  3. Returns structured handoff result with summary, decisions, TODOs, files
 """
 
 import sys
-import json
-import signal
 import logging
 import os
 import traceback
+import io
+from contextlib import redirect_stdout
+
+# Ensure shared package is importable regardless of working directory
+_this_dir = os.path.dirname(os.path.abspath(__file__))
+_shared_parent = os.path.abspath(os.path.join(_this_dir, '..'))
+if _shared_parent not in sys.path:
+    sys.path.insert(0, _shared_parent)
+
+from shared.json_rpc_sidecar import JsonRpcSidecar
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,58 +35,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("crewai-bridge")
 
-running = True
+sidecar = JsonRpcSidecar("crewai-bridge", logger)
 
 
-def handle_signal(signum, frame):
-    global running
-    logger.info("Received signal %s, shutting down...", signum)
-    running = False
-
-
-signal.signal(signal.SIGINT, handle_signal)
-signal.signal(signal.SIGTERM, handle_signal)
-
-
-def make_response(result, req_id=None):
-    resp = {"jsonrpc": "2.0", "result": result}
-    if req_id is not None:
-        resp["id"] = req_id
-    return resp
-
-
-def make_error(message, code=-32603, req_id=None):
-    resp = {"jsonrpc": "2.0", "error": {"code": code, "message": message}}
-    if req_id is not None:
-        resp["id"] = req_id
-    return resp
-
-
-def handle_request(req):
-    """Parse and execute a JSON-RPC request."""
-    method = req.get("method", "")
-    params = req.get("params", {})
-    req_id = req.get("id")
-
-    if method == "handoff":
-        return handle_handoff(params, req_id)
-    elif method == "health":
-        return make_response(
-            {
-                "status": "healthy",
-                "pid": os.getpid(),
-                "crewai_available": True,
-            },
-            req_id,
-        )
-    elif method == "shutdown":
-        global running
-        running = False
-        return make_response({"status": "shutting down"}, req_id)
-    else:
-        return make_error(f"Unknown method: {method}", -32601, req_id)
-
-
+@sidecar.method("handoff")
 def handle_handoff(params: dict, req_id):
     """
     Run the CrewAI Handoff Flow with the given parameters.
@@ -119,7 +71,10 @@ def handle_handoff(params: dict, req_id):
         }
 
         # Kick off — finalize() returns the handoff payload
-        result = flow.kickoff()
+        # Suppress stdout to prevent CrewAI's flow diagram (emoji + box-drawing)
+        # from corrupting the JSON-RPC protocol on stdout
+        with redirect_stdout(io.StringIO()):
+            result = flow.kickoff()
 
         # Extract the result
         if hasattr(result, "raw"):
@@ -146,17 +101,17 @@ def handle_handoff(params: dict, req_id):
             handoff_result.get("enriched", False),
         )
 
-        return make_response(handoff_result, req_id)
+        return sidecar.ok(handoff_result, req_id)
 
     except ImportError as e:
         logger.error("CrewAI not available: %s", e)
-        # Fallback: return a basic template result
-        return make_response(
+        return sidecar.ok(
             {
                 "source_agent_id": params.get("source_agent_id", ""),
                 "target_agent_id": params.get("target_agent_id", ""),
                 "summary": f"Handoff from {params.get('source_agent_id', 'unknown')} to {params.get('target_agent_id', 'unknown')}. "
                            f"CrewAI is not available. Install with: pip install crewai",
+                "entry_count": len(params.get("entries", [])),
                 "key_decisions": [],
                 "open_todos": [],
                 "files_touched": [],
@@ -168,12 +123,10 @@ def handle_handoff(params: dict, req_id):
         )
     except Exception as e:
         logger.error("Handoff flow failed: %s\n%s", e, traceback.format_exc())
-        return make_error(f"Handoff flow failed: {e}", -32603, req_id)
+        return sidecar.error(f"Handoff flow failed: {e}", -32603, req_id)
 
 
-def main():
-    logger.info("crewai-bridge started (pid=%d)", os.getpid())
-
+if __name__ == "__main__":
     # Check CrewAI availability
     try:
         import crewai
@@ -181,38 +134,4 @@ def main():
     except ImportError:
         logger.warning("CrewAI not installed — running in fallback mode")
 
-    # Send ready signal
-    ready = {"jsonrpc": "2.0", "method": "ready", "params": {"pid": os.getpid()}}
-    sys.stdout.write(json.dumps(ready) + "\n")
-    sys.stdout.flush()
-
-    while running:
-        try:
-            line = sys.stdin.readline()
-            if not line:
-                break
-
-            line = line.strip()
-            if not line:
-                continue
-
-            req = json.loads(line)
-            resp = handle_request(req)
-            sys.stdout.write(json.dumps(resp) + "\n")
-            sys.stdout.flush()
-
-        except json.JSONDecodeError as e:
-            err = make_error(f"Invalid JSON: {e}")
-            sys.stdout.write(json.dumps(err) + "\n")
-            sys.stdout.flush()
-        except Exception as e:
-            logger.error("Error: %s\n%s", e, traceback.format_exc())
-            err = make_error(str(e))
-            sys.stdout.write(json.dumps(err) + "\n")
-            sys.stdout.flush()
-
-    logger.info("crewai-bridge exited")
-
-
-if __name__ == "__main__":
-    main()
+    sidecar.run()

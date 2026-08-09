@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
   "app": {
@@ -28,46 +28,37 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/icon.ico",
+      "icons/icon.png"
     ],
-    "externalBin": [
-      "../sidecars/hello-bridge"
-    ],
+    "targets": ["nsis"],
     "windows": {
-      "nsis": {
-        "installMode": "both",
-        "displayLanguageSelector": false,
-        "installerIcon": "icons/icon.ico",
-        "languages": ["English"],
-        "headerImage": "icons/128x128.png",
-        "sidebarImage": "icons/128x128.png",
-        "startAppShortcut": true,
-        "desktopShortcut": true,
-        "shortcutName": "Mothership"
+      "wix": {
+        "language": "en-US",
+        "template": "default"
       },
-      "msi": {
-        "upgradeCode": "A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
       }
     },
     "category": "DeveloperTool",
     "shortDescription": "Desktop AI Control Center",
     "longDescription": "Mothership unifies browser-based and local AI agents into one memory-aware workspace with isolated terminal sessions, shared context, and session handoff.",
     "copyright": "© 2026 Mothership. All rights reserved.",
-    "homepage": "https://github.com/mothership/mothership",
-    "author": "Mothership Team"
+    "homepage": "https://github.com/mothership/mothership"
   },
   "plugins": {
     "updater": {
       "active": true,
       "dialog": true,
       "endpoints": [
-        "https://github.com/mothership/mothership/releases/latest/download/latest.json"
+        "https://github.com/mothership-ai/mothership/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHJlcXVpcmVkCg=="
     }

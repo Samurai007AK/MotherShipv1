@@ -8,6 +8,7 @@ import type {
   TaskChainStep,
 } from '../types/warRoom'
 import type { AgentProvider } from './agentStore'
+import { useExecutionEngineStore } from './executionEngineStore'
 
 interface WarRoomState {
   sessions: WarRoomSession[]
@@ -43,6 +44,45 @@ function generateId(): string {
   idCounter += 1
   return `war-${Date.now()}-${idCounter}`
 }
+
+// ── Helper: poll an execution group until it completes or times out ──────
+
+async function pollExecutionGroup(groupId: string, timeoutMs: number): Promise<string> {
+  const startTime = Date.now()
+
+  while (Date.now() - startTime < timeoutMs) {
+    // Fetch latest state from the backend
+    await useExecutionEngineStore.getState().getGroup(groupId)
+
+    const group = useExecutionEngineStore.getState().groups.find((g) => g.id === groupId)
+    if (!group) {
+      await delay(500)
+      continue
+    }
+
+    if (group.status === 'completed') {
+      // Return the output from the first (only) agent
+      const agent = group.agents[0]
+      return agent?.output || ''
+    }
+
+    if (group.status === 'error') {
+      const agent = group.agents[0]
+      throw new Error(agent?.error || 'Execution group failed')
+    }
+
+    // Still running — wait and poll again
+    await delay(500)
+  }
+
+  throw new Error(`Execution group ${groupId} timed out after ${timeoutMs}ms`)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// ── Store ───────────────────────────────────────────────────────────────────
 
 export const useWarRoomStore = create<WarRoomState>()((set, get) => ({
   sessions: [],
@@ -185,27 +225,38 @@ export const useWarRoomStore = create<WarRoomState>()((set, get) => ({
       get().updateChainStep(chainId, step.id, { status: 'running' })
 
       try {
-        // In production, this would call the actual agent
-        // For now, simulate with a delay
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-
-        // Build prompt: if there's previous output, include it
+        // Build prompt with previous context
         const promptWithContext = previousOutput
           ? `Previous context:\n${previousOutput}\n\nTask: ${step.prompt}`
           : step.prompt
 
-        // Mark as completed with mock output
-        const mockOutput = `[${step.agentId}] Completed: ${promptWithContext.slice(0, 80)}...`
-        previousOutput = mockOutput
+        // Execute this step via the Execution Engine (real PTY session)
+        const engineStore = useExecutionEngineStore.getState()
+        const groupId = await engineStore.startGroup({
+          name: `${chain.name} - Step ${step.id}`,
+          agents: [{ agent_id: step.agentId, prompt: promptWithContext }],
+          initial_context: previousOutput || undefined,
+        })
+
+        if (!groupId) {
+          throw new Error(`Failed to start execution for agent ${step.agentId}`)
+        }
+
+        // Poll until the execution group completes
+        const output = await pollExecutionGroup(groupId, 60_000)
+
+        // Mark step as completed with real output
+        previousOutput = output
 
         get().updateChainStep(chainId, step.id, {
           status: 'completed',
-          output: mockOutput,
+          output,
         })
       } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error'
         get().updateChainStep(chainId, step.id, {
           status: 'error',
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: errorMsg,
         })
         set((s) => ({
           taskChains: s.taskChains.map((c) =>

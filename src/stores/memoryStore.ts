@@ -43,7 +43,7 @@ export interface SessionInfo {
   entryCount: number
 }
 
-export type MemoryTab = 'notes' | 'context' | 'timeline' | 'search' | 'models' | 'warroom' | 'graph' | 'browser' | 'mcp'
+export type MemoryTab = 'notes' | 'context' | 'timeline' | 'search' | 'storage' | 'models' | 'warroom' | 'graph' | 'browser' | 'mcp' | 'execution' | 'performance' | 'reconsolidation'
 
 // --- Batched save helper (flushes every 2s) ---
 
@@ -118,9 +118,76 @@ interface MemoryState {
   // Persistence
   loadFromBackend: () => Promise<void>
 
+  // Cold storage
+  archivedSessions: ArchivedSessionInfo[]
+  loadArchivedSessions: () => Promise<void>
+  archiveOldSessions: (maxAgeHours: number) => Promise<number>
+  pruneOldSnapshots: (maxAgeDays: number, minKeep: number) => Promise<number>
+  restoreArchivedSession: (agentId: string, sessionId: string) => Promise<number>
+
+  // Episode Memory (Auto-Captured Tier)
+  episodeEntries: EpisodeEntry[]
+  episodeCount: number
+  promotedCount: number
+  reconsolidationFlags: ReconsolidationFlag[]
+  saveEpisode: (
+    agentId: string,
+    trigger: string,
+    content: string,
+    source: string,
+    metadata?: Record<string, unknown>
+  ) => Promise<ReconsolidationFlag[]>
+  queryEpisodes: (filter?: {
+    agentId?: string
+    trigger?: string
+    source?: string
+    limit?: number
+  }) => Promise<void>
+  deleteEpisode: (id: string) => Promise<void>
+  promoteEpisode: (episodeId: string) => Promise<void>
+  pruneExpiredEpisodes: () => Promise<void>
+  loadEpisodeStats: () => Promise<void>
+  loadReconsolidationFlags: (status?: string) => Promise<void>
+  resolveFlag: (flagId: string, resolution: 'resolved' | 'dismissed') => Promise<void>
+
   // Search
   setGlobalSearchQuery: (query: string) => void
   executeSearch: () => void
+}
+
+// --- Episode Memory (Auto-Captured Tier) ---
+
+export interface EpisodeEntry {
+  id: string
+  agent_id?: string
+  trigger: string
+  content: string
+  summary?: string
+  source: string
+  metadata: string
+  created_at: string
+  expires_at?: string
+  is_promoted: boolean
+}
+
+// --- Reconsolidation ---
+
+export interface ReconsolidationFlag {
+  id: string
+  episode_id: string
+  note_id: string
+  description: string
+  confidence: number
+  status: 'open' | 'resolved' | 'dismissed'
+  created_at: string
+  resolved_at?: string
+}
+
+export interface ArchivedSessionInfo {
+  session_id: string
+  agent_id: string
+  file_path: string
+  size_bytes: number
 }
 
 export const useMemoryStore = create<MemoryState>()((set, get) => ({
@@ -137,6 +204,13 @@ export const useMemoryStore = create<MemoryState>()((set, get) => ({
 
   globalSearchQuery: '',
   searchResults: [],
+  archivedSessions: [],
+
+  // Episode memory
+  episodeEntries: [],
+  episodeCount: 0,
+  promotedCount: 0,
+  reconsolidationFlags: [],
 
   isLoaded: false,
 
@@ -303,6 +377,48 @@ export const useMemoryStore = create<MemoryState>()((set, get) => ({
     }
   },
 
+  // Cold storage actions
+  loadArchivedSessions: async () => {
+    try {
+      const sessions = await invoke<ArchivedSessionInfo[]>('list_archived_sessions')
+      set({ archivedSessions: sessions })
+    } catch (e) {
+      console.error('Failed to load archived sessions:', e)
+    }
+  },
+
+  archiveOldSessions: async (maxAgeHours) => {
+    try {
+      const count = await invoke<number>('archive_old_sessions', { maxAgeHours })
+      await get().loadArchivedSessions()
+      return count
+    } catch (e) {
+      console.error('Failed to archive old sessions:', e)
+      return 0
+    }
+  },
+
+  pruneOldSnapshots: async (maxAgeDays, minKeep) => {
+    try {
+      const count = await invoke<number>('prune_old_snapshots', { maxAgeDays, minKeep })
+      return count
+    } catch (e) {
+      console.error('Failed to prune old snapshots:', e)
+      return 0
+    }
+  },
+
+  restoreArchivedSession: async (agentId, sessionId) => {
+    try {
+      const count = await invoke<number>('restore_archived_session', { agentId, sessionId })
+      await get().loadArchivedSessions()
+      return count
+    } catch (e) {
+      console.error('Failed to restore archived session:', e)
+      return 0
+    }
+  },
+
   executeSearch: async () => {
     const { globalSearchQuery } = get()
     const q = globalSearchQuery.trim()
@@ -348,6 +464,119 @@ export const useMemoryStore = create<MemoryState>()((set, get) => ({
         .map((item) => ({ type: 'context' as const, item }))
 
       set({ searchResults: [...noteResults, ...contextResults] })
+    }
+  },
+
+  // ── Episode Memory (Auto-Captured Tier) ──────────────────────────────
+
+  saveEpisode: async (agentId, trigger, content, source, metadata) => {
+    try {
+      const episode: EpisodeEntry = {
+        id: `ep-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        agent_id: agentId,
+        trigger,
+        content,
+        source,
+        metadata: JSON.stringify(metadata || {}),
+        created_at: new Date().toISOString(),
+        is_promoted: false,
+      }
+      const flags = await invoke<ReconsolidationFlag[]>('save_episode_memory', {
+        episode,
+      })
+      set((state) => ({
+        episodeEntries: [episode, ...state.episodeEntries].slice(0, 200),
+        episodeCount: state.episodeCount + 1,
+        reconsolidationFlags: [...flags, ...state.reconsolidationFlags],
+      }))
+      return flags
+    } catch (e) {
+      console.error('Failed to save episode:', e)
+      return []
+    }
+  },
+
+  queryEpisodes: async (filter) => {
+    try {
+      const episodes = await invoke<EpisodeEntry[]>('query_episode_memory', {
+        agentId: filter?.agentId || null,
+        trigger: filter?.trigger || null,
+        source: filter?.source || null,
+        limit: filter?.limit || 50,
+        offset: 0,
+      })
+      set({ episodeEntries: episodes })
+    } catch (e) {
+      console.error('Failed to query episodes:', e)
+    }
+  },
+
+  deleteEpisode: async (id) => {
+    try {
+      await invoke('delete_episode_memory', { id })
+      set((state) => ({
+        episodeEntries: state.episodeEntries.filter((e) => e.id !== id),
+      }))
+    } catch (e) {
+      console.error('Failed to delete episode:', e)
+    }
+  },
+
+  promoteEpisode: async (episodeId) => {
+    try {
+      await invoke('promote_episode_memory', { episodeId })
+      set((state) => ({
+        episodeEntries: state.episodeEntries.map((e) =>
+          e.id === episodeId ? { ...e, is_promoted: true } : e
+        ),
+      }))
+    } catch (e) {
+      console.error('Failed to promote episode:', e)
+    }
+  },
+
+  pruneExpiredEpisodes: async () => {
+    try {
+      const count = await invoke<number>('prune_expired_episodes')
+      if (count > 0) {
+        console.log(`Pruned ${count} expired episodes`)
+      }
+    } catch (e) {
+      console.error('Failed to prune episodes:', e)
+    }
+  },
+
+  loadEpisodeStats: async () => {
+    try {
+      const [total, promoted] = await invoke<[number, number]>('get_episode_memory_stats')
+      set({ episodeCount: total, promotedCount: promoted })
+    } catch (e) {
+      console.error('Failed to load episode stats:', e)
+    }
+  },
+
+  loadReconsolidationFlags: async (status) => {
+    try {
+      const flags = await invoke<ReconsolidationFlag[]>('list_reconsolidation_flags', {
+        status: status || null,
+        limit: 50,
+      })
+      set({ reconsolidationFlags: flags })
+    } catch (e) {
+      console.error('Failed to load reconsolidation flags:', e)
+    }
+  },
+
+  resolveFlag: async (flagId, resolution) => {
+    try {
+      await invoke('resolve_reconsolidation_flag', { flagId, resolution })
+      set((state) => ({
+        reconsolidationFlags: state.reconsolidationFlags.map((f) =>
+          f.id === flagId ? { ...f, status: resolution, resolved_at: new Date().toISOString() } : f
+        ),
+      }))
+    } catch (e) {
+      console.error('Failed to resolve flag:', e)
     }
   },
 }))

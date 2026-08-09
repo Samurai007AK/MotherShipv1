@@ -1,5 +1,5 @@
 /**
- * Mothership — Summary Engine Client
+ * Crew — Summary Engine Client
  *
  * Communicates with the summary-engine Python sidecar via Tauri commands.
  * Falls back to template-based summaries when Ollama is unavailable.

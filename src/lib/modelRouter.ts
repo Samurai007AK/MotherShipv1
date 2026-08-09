@@ -1,5 +1,5 @@
 /**
- * Mothership — Model Router Client
+ * Crew — Model Router Client
  *
  * Communicates with Ollama via Tauri commands for local LLM inference.
  * Supports model discovery, chat completion, and streaming.

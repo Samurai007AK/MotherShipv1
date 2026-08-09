@@ -208,3 +208,9 @@ pub struct FileMetadata {
     pub is_file: bool,
     pub is_dir: bool,
 }
+
+/// Write content to a file.
+#[tauri::command]
+pub async fn write_file_contents(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write {}: {}", path, e))
+}

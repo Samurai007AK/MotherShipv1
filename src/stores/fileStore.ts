@@ -15,6 +15,8 @@ interface FileState {
   lastFetch: number | null
   fetchFiles: () => Promise<void>
   searchFiles: (query: string) => FileEntry[]
+  readFileContent: (path: string) => Promise<string>
+  writeFileContent: (path: string, content: string) => Promise<void>
 }
 
 export const useFileStore = create<FileState>()((set, get) => ({
@@ -50,5 +52,27 @@ export const useFileStore = create<FileState>()((set, get) => ({
             f.ext.toLowerCase().includes(q))
       )
       .slice(0, 20)
+  },
+
+  readFileContent: async (path) => {
+    try {
+      return await invoke<string>('read_file_contents', { path })
+    } catch (e) {
+      console.error('Failed to read file:', e)
+      throw e
+    }
+  },
+
+  writeFileContent: async (path, content) => {
+    // Basic path validation - prevent writing outside project
+    if (path.includes('..') || path.startsWith('/')) {
+      throw new Error('Invalid file path')
+    }
+    try {
+      await invoke('write_file_contents', { path, content })
+    } catch (e) {
+      console.error('Failed to write file:', e)
+      throw e
+    }
   },
 }))

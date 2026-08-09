@@ -4,7 +4,7 @@
 // Schema uses FTS5 for full-text search, WAL mode for concurrent reads.
 
 use super::models::*;
-use rusqlite::{params, Connection, Result as SqlResult};
+use rusqlite::{params, Connection};
 use std::path::Path;
 use std::sync::Mutex;
 use std::io::Write;
@@ -84,6 +84,40 @@ impl MemoryStore {
             CREATE INDEX IF NOT EXISTS idx_entries_type ON memory_entries(entry_type);
             CREATE INDEX IF NOT EXISTS idx_entries_created ON memory_entries(created_at);
             CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
+
+            -- Episode memory table (auto-captured, high-volume, TTL-based)
+            CREATE TABLE IF NOT EXISTS episode_memory (
+                id TEXT PRIMARY KEY,
+                agent_id TEXT,
+                trigger TEXT NOT NULL,
+                content TEXT NOT NULL,
+                summary TEXT,
+                source TEXT NOT NULL DEFAULT 'terminal',
+                metadata TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                expires_at TEXT,
+                is_promoted INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_episode_agent ON episode_memory(agent_id);
+            CREATE INDEX IF NOT EXISTS idx_episode_trigger ON episode_memory(trigger);
+            CREATE INDEX IF NOT EXISTS idx_episode_created ON episode_memory(created_at);
+            CREATE INDEX IF NOT EXISTS idx_episode_expires ON episode_memory(expires_at);
+
+            -- Reconsolidation flags for conflict detection
+            CREATE TABLE IF NOT EXISTS reconsolidation_flags (
+                id TEXT PRIMARY KEY,
+                episode_id TEXT NOT NULL,
+                note_id TEXT NOT NULL,
+                description TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0.0,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TEXT NOT NULL,
+                resolved_at TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_flags_status ON reconsolidation_flags(status);
+            CREATE INDEX IF NOT EXISTS idx_flags_episode ON reconsolidation_flags(episode_id);
             ",
         )
         .map_err(|e| format!("Failed to initialize schema: {}", e))?;
@@ -368,6 +402,395 @@ impl MemoryStore {
     }
 
     // -----------------------------------------------------------------------
+    // Episode Memory CRUD (Auto-Captured Tier)
+    // -----------------------------------------------------------------------
+
+    /// Save an episode entry.
+    pub fn save_episode(&self, episode: &EpisodeEntry) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR REPLACE INTO episode_memory
+             (id, agent_id, trigger, content, summary, source, metadata, created_at, expires_at, is_promoted)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                episode.id,
+                episode.agent_id,
+                episode.trigger,
+                episode.content,
+                episode.summary,
+                episode.source,
+                episode.metadata,
+                episode.created_at,
+                episode.expires_at,
+                episode.is_promoted as i32,
+            ],
+        )
+        .map_err(|e| format!("Failed to save episode: {}", e))?;
+        Ok(())
+    }
+
+    /// Query episode entries with optional filters.
+    pub fn query_episodes(
+        &self,
+        agent_id: Option<&str>,
+        trigger: Option<&str>,
+        source: Option<&str>,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<EpisodeEntry>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        let mut sql = String::from(
+            "SELECT id, agent_id, trigger, content, summary, source, metadata, created_at, expires_at, is_promoted
+             FROM episode_memory WHERE 1=1",
+        );
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(aid) = agent_id {
+            sql.push_str(&format!(" AND agent_id = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(aid.to_string()));
+        }
+        if let Some(t) = trigger {
+            sql.push_str(&format!(" AND trigger = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(t.to_string()));
+        }
+        if let Some(s) = source {
+            sql.push_str(&format!(" AND source = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(s.to_string()));
+        }
+
+        sql.push_str(&format!(
+            " ORDER BY created_at DESC LIMIT ?{} OFFSET ?{}",
+            param_values.len() + 1,
+            param_values.len() + 2
+        ));
+        param_values.push(Box::new(limit as i64));
+        param_values.push(Box::new(offset as i64));
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| format!("Failed to prepare episode query: {}", e))?;
+
+        let rows = stmt
+            .query_map(params_refs.as_slice(), |row| {
+                let is_promoted: i32 = row.get(9)?;
+                Ok(EpisodeEntry {
+                    id: row.get(0)?,
+                    agent_id: row.get(1)?,
+                    trigger: row.get(2)?,
+                    content: row.get(3)?,
+                    summary: row.get(4)?,
+                    source: row.get(5)?,
+                    metadata: row.get(6)?,
+                    created_at: row.get(7)?,
+                    expires_at: row.get(8)?,
+                    is_promoted: is_promoted != 0,
+                })
+            })
+            .map_err(|e| format!("Failed to query episodes: {}", e))?;
+
+        let mut episodes = Vec::new();
+        for row in rows {
+            episodes.push(row.map_err(|e| format!("Failed to read episode row: {}", e))?);
+        }
+        Ok(episodes)
+    }
+
+    /// Delete an episode entry.
+    pub fn delete_episode(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM episode_memory WHERE id = ?1", params![id])
+            .map_err(|e| format!("Failed to delete episode: {}", e))?;
+        Ok(())
+    }
+
+    /// Promote an episode entry to note memory.
+    /// Copies the episode into memory_entries as a new note entry.
+    pub fn promote_episode(&self, episode_id: &str) -> Result<MemoryEntry, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // Fetch the episode
+        let episode = conn
+            .query_row(
+                "SELECT id, agent_id, trigger, content, summary, source, metadata, created_at, expires_at, is_promoted
+                 FROM episode_memory WHERE id = ?1",
+                params![episode_id],
+                |row| {
+                    let is_promoted: i32 = row.get(9)?;
+                    Ok(EpisodeEntry {
+                        id: row.get(0)?,
+                        agent_id: row.get(1)?,
+                        trigger: row.get(2)?,
+                        content: row.get(3)?,
+                        summary: row.get(4)?,
+                        source: row.get(5)?,
+                        metadata: row.get(6)?,
+                        created_at: row.get(7)?,
+                        expires_at: row.get(8)?,
+                        is_promoted: is_promoted != 0,
+                    })
+                },
+            )
+            .map_err(|e| format!("Episode not found: {}", e))?;
+
+        // Create a note entry from the episode
+        let now = chrono::Utc::now().to_rfc3339();
+        let entry = MemoryEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            content: episode.summary.clone().unwrap_or(episode.content.clone()),
+            agent_id: episode.agent_id,
+            entry_type: EntryType::Note,
+            tags: vec![format!("episode:{}", episode.trigger)],
+            summary: episode.summary.clone(),
+            files_referenced: Vec::new(),
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        // Save to note memory
+        let tags_json = serde_json::to_string(&entry.tags).unwrap_or_else(|_| "[]".to_string());
+        let files_json = serde_json::to_string(&entry.files_referenced).unwrap_or_else(|_| "[]".to_string());
+        conn.execute(
+            "INSERT OR REPLACE INTO memory_entries
+             (id, content, agent_id, entry_type, tags, summary, files_referenced, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                entry.id,
+                entry.content,
+                entry.agent_id,
+                entry.entry_type.as_str(),
+                tags_json,
+                entry.summary,
+                files_json,
+                entry.created_at,
+                entry.updated_at,
+            ],
+        )
+        .map_err(|e| format!("Failed to promote episode: {}", e))?;
+
+        // Mark episode as promoted
+        conn.execute(
+            "UPDATE episode_memory SET is_promoted = 1 WHERE id = ?1",
+            params![episode_id],
+        )
+        .map_err(|e| format!("Failed to mark episode promoted: {}", e))?;
+
+        Ok(entry)
+    }
+
+    /// Prune expired episodes (TTL-based cleanup).
+    pub fn prune_expired_episodes(&self) -> Result<u32, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let deleted = conn
+            .execute(
+                "DELETE FROM episode_memory WHERE expires_at IS NOT NULL AND expires_at < ?1",
+                params![now],
+            )
+            .map_err(|e| format!("Failed to prune episodes: {}", e))?;
+        Ok(deleted as u32)
+    }
+
+    /// Get episode count for summary.
+    pub fn episode_count(&self) -> Result<(u32, u32), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let total: u32 = conn
+            .query_row("SELECT COUNT(*) FROM episode_memory", [], |row| row.get(0))
+            .map_err(|e| format!("Failed to count episodes: {}", e))?;
+        let promoted: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM episode_memory WHERE is_promoted = 1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to count promoted: {}", e))?;
+        Ok((total, promoted))
+    }
+
+    // -----------------------------------------------------------------------
+    // Reconsolidation — Conflict Detection
+    // -----------------------------------------------------------------------
+
+    /// Detect conflicts between a new episode entry and existing note entries.
+    /// Uses simple keyword overlap + agent_id matching.
+    pub fn detect_conflicts(
+        &self,
+        episode: &EpisodeEntry,
+    ) -> Result<Vec<ReconsolidationFlag>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        let mut flags = Vec::new();
+
+        // Only check episodes that have an agent_id
+        if let Some(ref agent_id) = episode.agent_id {
+            // Find note entries from the same agent with similar content
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, content, summary, created_at
+                     FROM memory_entries
+                     WHERE agent_id = ?1 AND entry_type = 'note'
+                     ORDER BY created_at DESC
+                     LIMIT 20",
+                )
+                .map_err(|e| format!("Failed to prepare conflict query: {}", e))?;
+
+            let episode_lower = episode.content.to_lowercase();
+            let episode_words: Vec<&str> = episode_lower
+                .split_whitespace()
+                .filter(|w| w.len() > 4)
+                .collect();
+
+            let rows = stmt
+                .query_map(params![agent_id], |row| {
+                    let content: String = row.get(1)?;
+                    let summary: Option<String> = row.get(2)?;
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        content,
+                        summary,
+                    ))
+                })
+                .map_err(|e| format!("Failed to query notes for conflict: {}", e))?;
+
+            for row in rows {
+                let (note_id, note_content, note_summary) =
+                    row.map_err(|e| format!("Failed to read conflict row: {}", e))?;
+
+                let note_lower = note_content.to_lowercase();
+                let note_text = note_summary
+                    .as_ref()
+                    .map(|s| s.to_lowercase())
+                    .unwrap_or_default();
+
+                // Check for contradiction keywords
+                let contradictions = ["but", "however", "instead", "actually", "contradicts"];
+                for word in &episode_words {
+                    if word.len() < 5 {
+                        continue;
+                    }
+                    // If episode mentions a similar topic but contradicts
+                    if note_lower.contains(word) || note_text.contains(word) {
+                        // Check for contradiction indicators
+                        let has_contradiction = contradictions
+                            .iter()
+                            .any(|c| episode_lower.contains(c));
+
+                        if has_contradiction {
+                            let description = format!(
+                                "Episode contradicts note: '{}' appears in both, but episode contains contradiction markers",
+                                word
+                            );
+                            let flag = ReconsolidationFlag {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                episode_id: episode.id.clone(),
+                                note_id,
+                                description,
+                                confidence: 0.5,
+                                status: FlagStatus::Open,
+                                created_at: chrono::Utc::now().to_rfc3339(),
+                                resolved_at: None,
+                            };
+
+                            // Save flag to database — clone resolved_at to avoid move
+                            let resolved_at = flag.resolved_at.clone();
+                            let _ = conn.execute(
+                                "INSERT OR IGNORE INTO reconsolidation_flags
+                                 (id, episode_id, note_id, description, confidence, status, created_at, resolved_at)
+                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                                params![
+                                    flag.id,
+                                    flag.episode_id,
+                                    flag.note_id,
+                                    flag.description,
+                                    flag.confidence,
+                                    flag.status.as_str(),
+                                    flag.created_at,
+                                    resolved_at,
+                                ],
+                            );
+
+                            flags.push(flag);
+                            break; // One flag per episode is enough
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(flags)
+    }
+
+    /// List reconsolidation flags, optionally filtered by status.
+    pub fn list_reconsolidation_flags(
+        &self,
+        status: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<ReconsolidationFlag>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        let mut sql = String::from(
+            "SELECT id, episode_id, note_id, description, confidence, status, created_at, resolved_at
+             FROM reconsolidation_flags WHERE 1=1",
+        );
+        let mut params_list: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(s) = status {
+            sql.push_str(&format!(" AND status = ?{}", params_list.len() + 1));
+            params_list.push(Box::new(s.to_string()));
+        }
+
+        sql.push_str(&format!(
+            " ORDER BY created_at DESC LIMIT ?{}",
+            params_list.len() + 1
+        ));
+        params_list.push(Box::new(limit as i64));
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_list.iter().map(|p| p.as_ref()).collect();
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| format!("Failed to prepare flags query: {}", e))?;
+
+        let rows = stmt
+            .query_map(params_refs.as_slice(), |row| {
+                let status_str: String = row.get(5)?;
+                Ok(ReconsolidationFlag {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    note_id: row.get(2)?,
+                    description: row.get(3)?,
+                    confidence: row.get(4)?,
+                    status: FlagStatus::from_str(&status_str),
+                    created_at: row.get(6)?,
+                    resolved_at: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query flags: {}", e))?;
+
+        let mut flags = Vec::new();
+        for row in rows {
+            flags.push(row.map_err(|e| format!("Failed to read flag row: {}", e))?);
+        }
+        Ok(flags)
+    }
+
+    /// Resolve a reconsolidation flag (mark as resolved or dismissed).
+    pub fn resolve_flag(&self, flag_id: &str, resolution: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE reconsolidation_flags SET status = ?1, resolved_at = ?2 WHERE id = ?3",
+            params![resolution, now, flag_id],
+        )
+        .map_err(|e| format!("Failed to resolve flag: {}", e))?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
     // FTS5 Full-Text Search
     // -----------------------------------------------------------------------
 
@@ -494,10 +917,11 @@ fn generate_snippet(content: &str, query: &str, max_len: usize) -> String {
 
 // --- Cold Storage ---
 
-/// Archive old sessions to compressed JSON files.
-/// Sessions older than `max_age_hours` are archived and removed from SQLite.
-pub fn archive_old_sessions(
-    &self,
+impl MemoryStore {
+    /// Archive old sessions to compressed JSON files.
+    /// Sessions older than `max_age_hours` are archived and removed from SQLite.
+    pub fn archive_old_sessions(
+        &self,
     max_age_hours: u64,
     cold_storage_dir: &Path,
 ) -> Result<u32, String> {
@@ -767,6 +1191,7 @@ pub fn restore_archived_session(
     }
 
     Ok(restored_count)
+    }
 }
 
 /// Info about an archived session.

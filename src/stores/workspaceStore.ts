@@ -8,6 +8,8 @@ export interface WorkspaceTab {
   isActive: boolean
   isConnected: boolean
   lastActivity?: Date
+  /** Optional working directory override (e.g., worktree path) */
+  workingDir?: string
 }
 
 /**
@@ -30,16 +32,19 @@ interface WorkspaceState {
   splitPanes: Map<string, SplitPaneState[]> // keyed by tab agentId
   activeSplitPaneId: string | null
 
-  addTab: (agentId: string, agentName: string, provider: string) => void
+  addTab: (agentId: string, agentName: string, provider: string, workingDir?: string) => void
   removeTab: (agentId: string) => void
   setActiveTab: (agentId: string) => void
   setConnected: (agentId: string, connected: boolean) => void
+  /** Like setConnected, but only updates tab.isConnected without touching agent status */
+  setTabConnected: (agentId: string, connected: boolean) => void
 
   // Split pane actions (1a.2d)
   addSplitPane: (tabId: string, direction: 'horizontal' | 'vertical') => void
   removeSplitPane: (tabId: string, paneId: string) => void
   setActiveSplitPane: (paneId: string | null) => void
   getSplitPanes: (tabId: string) => SplitPaneState[]
+  setWorkingDir: (agentId: string, dir: string) => void
 }
 
 let splitPaneCounter = 0
@@ -50,7 +55,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   splitPanes: new Map(),
   activeSplitPaneId: null,
 
-  addTab: (agentId, agentName, provider) =>
+  addTab: (agentId, agentName, provider, workingDir) =>
     set((state) => {
       if (state.tabs.find((t) => t.agentId === agentId)) {
         useAgentStore.getState().updateAgentStatus(agentId, 'running')
@@ -67,6 +72,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
             isActive: true,
             isConnected: false,
             lastActivity: new Date(),
+            workingDir,
           },
         ],
         activeTabId: agentId,
@@ -106,6 +112,13 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         ),
       }
     }),
+
+  setTabConnected: (agentId, connected) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.agentId === agentId ? { ...t, isConnected: connected } : t
+      ),
+    })),
 
   // --- Split pane actions (1a.2d) ---
 
@@ -161,6 +174,13 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     }),
 
   setActiveSplitPane: (paneId) => set({ activeSplitPaneId: paneId }),
+
+  setWorkingDir: (agentId, dir) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.agentId === agentId ? { ...t, workingDir: dir } : t
+      ),
+    })),
 
   getSplitPanes: (tabId) => {
     return get().splitPanes.get(tabId) || []

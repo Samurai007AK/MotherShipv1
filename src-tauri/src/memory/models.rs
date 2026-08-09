@@ -5,7 +5,12 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A memory note — user-created or agent-generated knowledge snippet.
+// ---------------------------------------------------------------------------
+// Note Memory (Curated Tier) — user-created or agent-generated knowledge
+// ---------------------------------------------------------------------------
+
+/// A curated memory note — stable, persistent knowledge. This is the
+/// existing memory_entries table, now treated as the "note memory" tier.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
     pub id: String,
@@ -19,6 +24,63 @@ pub struct MemoryEntry {
     pub updated_at: String, // ISO 8601
 }
 
+// ---------------------------------------------------------------------------
+// Episode Memory (Auto-Captured Tier) — raw interaction segments
+// ---------------------------------------------------------------------------
+
+/// An auto-captured episode entry — raw terminal output, tool calls, or
+/// agent activity. These are stored in a separate high-volume table with
+/// TTL and auto-summarization. Can be promoted to note memory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EpisodeEntry {
+    pub id: String,
+    pub agent_id: Option<String>,
+    /// Trigger type (e.g. "terminal_output", "tool_call", "git_activity")
+    pub trigger: String,
+    /// The raw content (may be truncated)
+    pub content: String,
+    /// Auto-generated summary after capture (populated asynchronously)
+    pub summary: Option<String>,
+    /// Source system (e.g. "terminal", "git", "file_edit")
+    pub source: String,
+    /// Flexible metadata as JSON blob
+    pub metadata: String,
+    /// When the episode was captured
+    pub created_at: String,
+    /// When this episode expires (auto-pruned after this date)
+    pub expires_at: Option<String>,
+    /// Whether this episode was promoted to note memory
+    pub is_promoted: bool,
+}
+
+/// A reconsolidation flag — indicates a potential conflict between
+/// episode memory and note memory that needs user review.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReconsolidationFlag {
+    pub id: String,
+    /// The episode entry that triggered the conflict
+    pub episode_id: String,
+    /// The note entry that conflicts
+    pub note_id: String,
+    /// Description of the conflict
+    pub description: String,
+    /// Confidence level (0.0 - 1.0)
+    pub confidence: f64,
+    /// Resolution status
+    pub status: FlagStatus,
+    pub created_at: String,
+    pub resolved_at: Option<String>,
+}
+
+/// Status of a reconsolidation flag.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum FlagStatus {
+    Open,
+    Resolved,
+    Dismissed,
+}
+
 /// Type of memory entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -29,6 +91,25 @@ pub enum EntryType {
     Summary,
     Handoff,
     Decision,
+}
+
+impl FlagStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FlagStatus::Open => "open",
+            FlagStatus::Resolved => "resolved",
+            FlagStatus::Dismissed => "dismissed",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "open" => FlagStatus::Open,
+            "resolved" => FlagStatus::Resolved,
+            "dismissed" => FlagStatus::Dismissed,
+            _ => FlagStatus::Open,
+        }
+    }
 }
 
 impl EntryType {

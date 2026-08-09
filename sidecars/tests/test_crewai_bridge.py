@@ -71,6 +71,7 @@ def sidecar_process():
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,  # Discard logs to avoid pipe blocking
         text=True,
+        encoding='utf-8',
         cwd=SIDECAR_DIR,
     )
 
@@ -131,12 +132,12 @@ class TestExistence:
         assert os.path.exists(flow_path), f"flow.py not found: {flow_path}"
 
     def test_crewai_bridge_main_has_required_functions(self):
-        """main.py exports handle_request, handle_handoff, and main."""
+        """main.py exports handle_handoff and uses sidecar.run()."""
         with open(SIDECAR_MAIN) as f:
             content = f.read()
-        assert "def handle_request" in content
         assert "def handle_handoff" in content
-        assert "def main()" in content
+        assert "sidecar.run()" in content
+        assert "from shared.json_rpc_sidecar import" in content
 
     def test_crewai_bridge_flow_has_handoff_flow(self):
         """flow.py defines the HandoffFlow class with required methods."""
@@ -144,8 +145,9 @@ class TestExistence:
         with open(flow_path) as f:
             content = f.read()
         assert "class HandoffFlow" in content
-        assert "or_" in content, "Flow should use or_() for OR logic"
         assert "HandoffFlow(Flow)" in content
+        assert "@start()" in content
+        assert "@listen(\"finalize_step\")" in content
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -193,6 +195,37 @@ class TestFlowHelpers:
         result = flow._format_entries(long_entry)
         assert result.count("x") == 500, "Content should be truncated to 500 chars"
 
+    def test_format_entries_empty_list(self):
+        """_format_entries handles empty list gracefully."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        result = flow._format_entries([])
+        assert result == ""
+
+    def test_format_entries_without_optional_fields(self):
+        """_format_entries handles entries missing optional fields."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        entries = [
+            {"content": "Only content provided"},  # No entry_type or agent_id
+        ]
+        result = flow._format_entries(entries)
+        assert "Only content provided" in result
+        assert "unknown" in result  # Default values for missing fields
+
+    def test_format_entries_handles_camelcase_fields(self):
+        """_format_entries accepts camelCase fields (frontend format)."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        entries = [{
+            "content": "Testing camelCase",
+            "entryType": "output",
+            "agentId": "frontend-agent",
+        }]
+        result = flow._format_entries(entries)
+        assert "Testing camelCase" in result
+        assert "frontend-agent" in result
+
     def test_fallback_analysis_returns_summary(self):
         """_fallback_analysis returns structured summary from entries."""
         HandoffFlow = self._import_flow()
@@ -209,7 +242,20 @@ class TestFlowHelpers:
         flow = HandoffFlow()
         result = flow._fallback_analysis([])
 
-        assert result == "No context data"
+        assert result == "Total entries: 0"
+
+    def test_fallback_analysis_without_file_fields(self):
+        """_fallback_analysis handles entries without files_referenced."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        entries = [{
+            "content": "Some work done",
+            "entry_type": "output",
+            "agent_id": "test",
+        }]  # No files_referenced or filesReferenced
+        result = flow._fallback_analysis(entries)
+        assert "Total entries: 1" in result
+        assert "Files:" not in result
 
     def test_parse_structured_handles_empty_text(self):
         """_parse_structured handles empty input."""
@@ -260,6 +306,122 @@ class TestFlowHelpers:
         assert result["decisions"] == []
         assert result["todos"] == []
         assert result["files"] == []
+
+    def test_parse_structured_mixed_case_headers(self):
+        """_parse_structured handles mixed-case section headers."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        text = (
+            "Overview: Mixed case header\n"
+            "Decisions: Some decision\n"
+            "State: In progress\n"
+        )
+        result = flow._parse_structured(text)
+        # The parser uses .upper() check, so it should match
+        assert "Mixed case" in result["overview"]
+        assert len(result["decisions"]) >= 1
+
+    def test_parse_structured_no_section_headers(self):
+        """_parse_structured handles text with no section headers."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        text = "Just some plain text without any section headers\n-accomplished task A\n-accomplished task B"
+        result = flow._parse_structured(text)
+        assert result["overview"] == ""
+        assert result["decisions"] == []
+        assert result["state"] == ""
+
+    def test_parse_structured_multiline_state(self):
+        """_parse_structured appends continuation lines to state."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        text = (
+            "OVERVIEW: Done\n"
+            "STATE: In progress\n"
+            "still working on auth\n"
+            "almost complete\n"
+        )
+        result = flow._parse_structured(text)
+        assert "progress" in result["state"]
+        assert "auth" in result["state"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 2b. Unit Tests — Flow Routing Logic
+# ────────────────────────────────────────────────────────────────────────────
+
+class TestFlowRouting:
+    """Test the route_handoff routing logic (no CrewAI needed)."""
+
+    @staticmethod
+    def _import_flow():
+        pytest.importorskip("crewai", reason="crewai not installed")
+        sys.path.insert(0, SIDECAR_DIR)
+        for key in list(sys.modules.keys()):
+            if key.startswith("flow") or key.startswith("crewai"):
+                del sys.modules[key]
+        from flow import HandoffFlow
+        return HandoffFlow
+
+    def test_route_to_direct_summary_for_few_entries(self):
+        """Few entries with short analysis routes to 'finish' with direct tag."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        analysis = {
+            "entry_count": 3,
+            "raw_analysis": "Short analysis text",
+        }
+        result = flow.route_handoff(analysis)
+        assert result == "finalize_step"
+        assert analysis["_routed_to"] == "direct"
+
+    def test_route_to_enrich_summary_for_many_entries(self):
+        """More than 10 entries routes to 'finalize_step' with enrich tag."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        analysis = {
+            "entry_count": 15,
+            "raw_analysis": "Short",
+        }
+        result = flow.route_handoff(analysis)
+        assert result == "finalize_step"
+        assert analysis["_routed_to"] == "enrich"
+
+    def test_route_to_enrich_summary_for_long_analysis(self):
+        """Analysis text longer than 2000 chars routes to 'finalize_step' with enrich tag."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        analysis = {
+            "entry_count": 2,
+            "raw_analysis": "x" * 2500,
+        }
+        result = flow.route_handoff(analysis)
+        assert result == "finalize_step"
+        assert analysis["_routed_to"] == "enrich"
+
+    def test_route_exactly_at_boundary_stays_direct(self):
+        """Exactly 10 entries and 2000 chars stays at 'finalize_step' with direct tag."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        analysis = {
+            "entry_count": 10,
+            "raw_analysis": "x" * 2000,
+        }
+        result = flow.route_handoff(analysis)
+        assert result == "finalize_step"
+        assert analysis["_routed_to"] == "direct"
+
+    def test_route_no_entries_stays_direct(self):
+        """Zero entries routes to 'finalize_step' with direct tag (not complex)."""
+        HandoffFlow = self._import_flow()
+        flow = HandoffFlow()
+        analysis = {
+            "entry_count": 0,
+            "raw_analysis": "",
+        }
+        result = flow.route_handoff(analysis)
+        assert result == "finalize_step"
+        assert analysis["_routed_to"] == "direct"
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -346,6 +508,54 @@ class TestSidecarProcess:
         assert "error" not in resp
         result = resp.get("result", {})
         assert result.get("entry_count") == 1
+
+    def test_handoff_with_camelcase_fields(self, sidecar_process):
+        """Handoff with camelCase fields (frontend format) works."""
+        resp = send_request(sidecar_process, "handoff", {
+            "source_agent_id": "claude",
+            "target_agent_id": "codex",
+            "entries": [
+                {
+                    "id": "entry-1",
+                    "content": "Frontend-style entry",
+                    "entryType": "output",
+                    "agentId": "claude",
+                    "tags": [],
+                    "filesReferenced": ["src/lib/utils.ts"],
+                    "createdAt": "2026-06-17T12:00:00Z",
+                }
+            ],
+        })
+
+        assert "error" not in resp
+        result = resp.get("result", {})
+        assert result.get("entry_count") == 1
+        assert isinstance(result.get("summary"), str)
+
+    def test_handoff_with_many_entries(self, sidecar_process):
+        """Handoff with 25 entries (exceeds 20 limit) still works."""
+        entries = [
+            {
+                "id": f"entry-{i}",
+                "content": f"Entry number {i}",
+                "entry_type": "output",
+                "agent_id": "claude",
+                "tags": [],
+                "files_referenced": [],
+                "created_at": "2026-06-17T10:00:00Z",
+            }
+            for i in range(25)
+        ]
+        resp = send_request(sidecar_process, "handoff", {
+            "source_agent_id": "claude",
+            "target_agent_id": "codex",
+            "entries": entries,
+        })
+
+        assert "error" not in resp
+        result = resp.get("result", {})
+        assert result.get("entry_count") == 25
+        assert isinstance(result.get("summary"), str)
 
     def test_unknown_method_returns_error(self, sidecar_process):
         """Unknown methods return a JSON-RPC error response."""

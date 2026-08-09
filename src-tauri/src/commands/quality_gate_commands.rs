@@ -24,3 +24,14 @@ pub async fn auto_detect_quality_gate_config(
     use crate::quality_gate;
     Ok(quality_gate::detect_project_config(std::path::Path::new(&project_path)))
 }
+
+/// Run AI-powered code review using OpenCodeReview (ocr) CLI.
+/// Gracefully degrades if ocr is not installed (returns None).
+#[tauri::command]
+pub async fn run_code_review(
+    project_path: String,
+) -> Result<Option<crate::quality_gate::code_reviewer::CodeReviewResult>, String> {
+    use crate::quality_gate::code_reviewer::CodeReviewer;
+    let mut reviewer = CodeReviewer::new(&project_path);
+    Ok(reviewer.run_review().await)
+}

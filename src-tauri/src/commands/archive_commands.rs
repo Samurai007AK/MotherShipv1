@@ -50,7 +50,7 @@ pub async fn list_archives(
 #[tauri::command]
 pub async fn restore_archive(
     archive_id: String,
-    state: State<'_, ArchiveManager>,
+    _state: State<'_, ArchiveManager>,
 ) -> Result<(), String> {
     // TODO: Find entry by ID and restore
     tracing::info!(archive_id, "Restore requested");

@@ -6,6 +6,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { useThemeStore } from '../stores/themeStore'
 import { chatCompletionStream, type ChatMessage } from '../lib/modelRouter'
+import { useStatusHeuristicsStore } from '../stores/statusHeuristicsStore'
 import '@xterm/xterm/css/xterm.css'
 
 // --- Types matching Rust terminal/mod.rs ---
@@ -18,6 +19,8 @@ export interface PtySessionInfo {
   cols: number
   rows: number
   createdAt: string
+  /** RFC 3339 timestamp of the last activity (input or output). */
+  lastActivityAt: string
 }
 
 export interface PtyConfig {
@@ -156,6 +159,8 @@ interface UseTerminalOptions {
   aiSystemPrompt?: string
   onExit?: (code: number) => void
   onError?: (message: string) => void
+  /** Called after reconnect successfully spawns a new PTY session */
+  onReconnect?: () => void
 }
 
 export function useTerminal({
@@ -168,6 +173,7 @@ export function useTerminal({
   aiSystemPrompt,
   onExit,
   onError,
+  onReconnect,
 }: UseTerminalOptions) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -251,28 +257,52 @@ export function useTerminal({
     return () => observer.disconnect()
   }, [])
 
-  // --- Visibility-based pause/resume ---
+  // --- Visibility-based pause/resume with IPC ---
   useEffect(() => {
     if (visible) {
+      // Resume: clear any pending timer, restore from snapshot, IPC resume
       if (pauseTimerRef.current) {
         clearTimeout(pauseTimerRef.current)
         pauseTimerRef.current = null
       }
-      if (sessionId && terminalRef.current) {
-        const snapshot = bufferSnapshots.get(sessionId)
-        if (snapshot && isPaused) {
-          setIsPaused(false)
-        }
+      if (sessionId && isPaused) {
+        // IPC resume the PTY process FIRST, then restore snapshot on success.
+        // This prevents stale buffered output from interleaving with the snapshot.
+        invoke('resume_terminal_session', { sessionId })
+          .then(() => {
+            // Restore buffer snapshot after resume completes
+            if (terminalRef.current) {
+              const snapshot = bufferSnapshots.get(sessionId)
+              if (snapshot) {
+                terminalRef.current.clear()
+                terminalRef.current.write(snapshot)
+              }
+            }
+            setIsPaused(false)
+          })
+          .catch((e) =>
+            console.error('Failed to resume terminal:', e)
+          )
       }
       fitAddonRef.current?.fit()
       lastActivityRef.current = Date.now()
-    } else {
+    } else if (!isPaused) {
+      // Start pause timer — after 30s idle, pause the PTY
       pauseTimerRef.current = setTimeout(() => {
         if (sessionId && terminalRef.current) {
-          bufferSnapshots.set(sessionId, captureBufferSnapshot(terminalRef.current))
-          setIsPaused(true)
+          // Capture current buffer before pausing (save both to memory and disk)
+          const snapshot = captureBufferSnapshot(terminalRef.current)
+          bufferSnapshots.set(sessionId, snapshot)
+          invoke('save_terminal_buffer', { agentId, content: snapshot })
+            .catch((e) => console.error('Failed to save terminal buffer to disk:', e))
+          // IPC pause the PTY process — only set isPaused=true on success
+          invoke('pause_terminal_session', { sessionId })
+            .then(() => setIsPaused(true))
+            .catch((e) =>
+              console.error('Failed to pause terminal:', e)
+            )
         }
-      }, 5 * 60 * 1000)
+      }, 30 * 1000) // 30 seconds
     }
 
     return () => {
@@ -447,6 +477,8 @@ export function useTerminal({
             if (event.payload.sessionId === sessionId) {
               lastActivityRef.current = Date.now()
               terminalRef.current?.write(event.payload.data)
+              // Feed output to status heuristics for automatic agent status detection
+              useStatusHeuristicsStore.getState().feedOutput(agentId, event.payload.data)
             }
           }
         )
@@ -548,6 +580,18 @@ export function useTerminal({
       setIsConnected(true)
       setHasError(false)
       setErrorMessage(null)
+
+      // Load saved terminal buffer from disk (cross-restart persistence)
+      invoke<string | null>('load_terminal_buffer', { agentId })
+        .then((saved) => {
+          if (saved && terminalRef.current) {
+            terminalRef.current.clear()
+            terminalRef.current.write(saved)
+            bufferSnapshots.set(info.id, saved)
+          }
+        })
+        .catch((e) => console.error('Failed to load saved terminal buffer:', e))
+
       return info
     } catch (e) {
       console.error('Failed to spawn terminal session:', e)
@@ -587,8 +631,11 @@ export function useTerminal({
     setHasError(false)
     setErrorMessage(null)
     const info = await spawn()
+    if (info) {
+      onReconnect?.()
+    }
     return info
-  }, [sessionId, spawn, isAiMode])
+  }, [sessionId, spawn, isAiMode, onReconnect])
 
   // Write data to xterm
   const write = useCallback((data: string) => {
@@ -624,6 +671,9 @@ export function useTerminal({
     try {
       await invoke('close_terminal_session', { sessionId })
       bufferSnapshots.delete(sessionId)
+      // Clear the persisted buffer from disk
+      invoke('clear_terminal_buffer', { agentId })
+        .catch((e) => console.error('Failed to clear terminal buffer from disk:', e))
       terminalRef.current?.clear()
       sessionRef.current = null
       setSessionId(null)
@@ -809,14 +859,24 @@ export function useTerminal({
     }
   }, [copySelection, pasteFromClipboard])
 
-  // Auto-cleanup on unmount
+  // Reset isPaused when session changes (new terminal spawned for hidden tab)
+  useEffect(() => {
+    if (sessionId) {
+      setIsPaused(false)
+    }
+  }, [sessionId])
+
+  // Auto-cleanup on unmount — save buffer to memory and disk
   useEffect(() => {
     return () => {
       if (sessionId && terminalRef.current) {
-        bufferSnapshots.set(sessionId, captureBufferSnapshot(terminalRef.current))
+        const snapshot = captureBufferSnapshot(terminalRef.current)
+        bufferSnapshots.set(sessionId, snapshot)
+        invoke('save_terminal_buffer', { agentId, content: snapshot })
+          .catch((e) => console.error('Failed to save terminal buffer to disk:', e))
       }
     }
-  }, [sessionId])
+  }, [sessionId, agentId])
 
   // Conversation history (AI mode only) — version counter ensures reactivity
   const conversationMessages = useMemo(() => {

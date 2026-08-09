@@ -1,8 +1,10 @@
 import { useState, memo, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { useAgentStore, getProviderColor, type Agent } from '../../stores/agentStore'
 import { useMemoryStore, type HandoffPack, type MemoryNote } from '../../stores/memoryStore'
-import { ArrowRight, CheckCircle, Loader2, X, Send, Sparkles } from 'lucide-react'
+import { generateSummary, type ContextSnapshot } from '../../lib/summaryEngine'
+import { ArrowRight, CheckCircle, Loader2, X, Send, Sparkles, BrainCircuit, Activity } from 'lucide-react'
 
 // --- HandoffDialog ---
 // Modal for compiling and sending context from one agent to another.
@@ -72,6 +74,55 @@ export const HandoffDialog = memo(function HandoffDialog({
   const [result, setResult] = useState<HandoffPack | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [useCrewAI, setUseCrewAI] = useState(false)
+  const [summaryModel, setSummaryModel] = useState<string | null>(null)
+  const [flowProgress, setFlowProgress] = useState<{ stage: string; progress: number; message: string } | null>(null)
+  const [flowStage, setFlowStage] = useState<string>('')
+
+  // Listen for CrewAI flow progress events from Tauri
+  useEffect(() => {
+    if (!isOpen || !useCrewAI || !isCompiling) {
+      setFlowProgress(null)
+      setFlowStage('')
+      return
+    }
+    let unlisten: (() => void) | undefined
+    const setup = async () => {
+      try {
+        unlisten = await listen<{ stage: string; progress: number; message: string }>(
+          'crewai-flow-progress',
+          (event) => {
+            setFlowProgress(event.payload)
+            const stageLabels: Record<string, string> = {
+              connecting: 'Connecting',
+              preparing: 'Preparing',
+              receive_handoff: 'Receiving',
+              analyze_context: 'Analyzing',
+              route_handoff: 'Routing',
+              finalize: 'Finalizing',
+              complete: 'Complete',
+            }
+            setFlowStage(stageLabels[event.payload.stage] || event.payload.stage)
+          }
+        )
+      } catch {
+        // Outside Tauri environment (vitest, browser dev) — ignore
+      }
+    }
+    setup()
+    return () => {
+      unlisten?.()
+    }
+  }, [isOpen, useCrewAI, isCompiling])
+
+  // Close on Escape key — MUST be before the early return to maintain hook order
+  useEffect(() => {
+    if (!isOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleClose()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [isOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) return null
 
@@ -114,6 +165,33 @@ export const HandoffDialog = memo(function HandoffDialog({
         // Standard manual handoff
         const handoff = await compileHandoff(sourceAgentId, targetAgentId)
         if (handoff) {
+          // Try to enhance the summary with Ollama-powered summarization
+          const snapshots: ContextSnapshot[] = handoff.entries.slice(0, 20).map((entry) => ({
+            trigger: 'handoff',
+            agent_id: entry.agentId || sourceAgentId,
+            output_tail: entry.content.slice(0, 2000),
+            open_files: entry.filesReferenced,
+            decisions:
+              entry.entryType === 'decision'
+                ? [entry.content]
+                : [],
+            memory_size: entry.content.length,
+          }))
+
+          const enhanced = await generateSummary(
+            snapshots,
+            targetAgentId,
+            'brief',
+          )
+
+          if (enhanced.model_used !== 'template') {
+            // LLM summary succeeded — use it
+            handoff.summary = enhanced.summary
+            setSummaryModel(enhanced.model_used)
+          } else {
+            setSummaryModel(null)
+          }
+
           setResult(handoff)
           onHandoffComplete?.(handoff)
         } else {
@@ -132,18 +210,9 @@ export const HandoffDialog = memo(function HandoffDialog({
     setResult(null)
     setError(null)
     setUseCrewAI(false)
+    setSummaryModel(null)
     onClose()
   }
-
-  // Close on Escape key
-  useEffect(() => {
-    if (!isOpen) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [isOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -156,7 +225,7 @@ export const HandoffDialog = memo(function HandoffDialog({
         <div className="flex items-center justify-between px-4 py-3 border-b border-c-border">
           <div className="flex items-center gap-2">
             <ArrowRight className="w-4 h-4 text-mothership-400" />
-            <h2 className="text-sm font-medium text-c-text">Context Handoff</h2>
+            <h2 className="text-sm font-medium text-c-text" data-testid="handoff-dialog-title">Context Handoff</h2>
           </div>
           <button
             onClick={handleClose}
@@ -182,7 +251,17 @@ export const HandoffDialog = memo(function HandoffDialog({
 
               {/* Summary preview */}
               <div className="w-full mt-2 p-3 bg-c-surface rounded-lg border border-c-border">
-                <p className="text-[10px] font-medium text-c-muted mb-1">Summary</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[10px] font-medium text-c-muted">Summary</p>
+                  {summaryModel ? (
+                    <span className="flex items-center gap-1 text-[9px] text-mothership-400 font-medium">
+                      <BrainCircuit className="w-2.5 h-2.5" />
+                      {summaryModel}
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-c-muted-light">template</span>
+                  )}
+                </div>
                 <p className="text-[11px] text-c-text-dim leading-relaxed whitespace-pre-line">
                   {result.summary.length > 300
                     ? `${result.summary.slice(0, 300)}…`
@@ -248,6 +327,26 @@ export const HandoffDialog = memo(function HandoffDialog({
                 </div>
               )}
 
+              {/* CrewAI Flow Progress */}
+              {isCompiling && useCrewAI && flowProgress && (
+                <div className="mb-3 space-y-2">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="flex items-center gap-1.5 text-mothership-400 font-medium">
+                      <Activity className="w-3 h-3" />
+                      {flowStage}
+                    </span>
+                    <span className="text-c-muted">{flowProgress.progress}%</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-c-surface rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-mothership-500 to-purple-500 rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${flowProgress.progress}%` }}
+                    />
+                  </div>
+                  <p className="text-[9px] text-c-muted-light truncate">{flowProgress.message}</p>
+                </div>
+              )}
+
               {/* CrewAI toggle */}
               <div className="mb-3 flex items-center gap-2">
                 <button
@@ -281,7 +380,7 @@ export const HandoffDialog = memo(function HandoffDialog({
                 {isCompiling ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    {useCrewAI ? 'Running CrewAI Flow…' : 'Compiling context…'}
+                    {useCrewAI && flowStage ? flowStage : 'Compiling context…'}
                   </>
                 ) : (
                   <>

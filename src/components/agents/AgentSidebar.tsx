@@ -1,194 +1,208 @@
-import { useState, useRef, useCallback, useMemo } from 'react'
-import { useAgentStore, getProviderColor, getStatusColor, type Agent, type AgentStatus, type AgentCategory } from '../../stores/agentStore'
+import { useState, useMemo } from 'react'
+import {
+  useAgentStore,
+  getRoleColor,
+  getRoleMeta,
+  type Agent,
+  type TeamCategory,
+} from '../../stores/agentStore'
+import { useStatusHeuristicsStore } from '../../stores/statusHeuristicsStore'
+import { useExecutionEngineStore } from '../../stores/executionEngineStore'
 import { AddAgentDialog } from './AddAgentDialog'
-import { Plus, Settings, GripVertical, ChevronDown } from 'lucide-react'
-import { ThemeToggle } from '../layout/ThemeToggle'
+import { Plus, Play, Square, Trash2 } from 'lucide-react'
 
-// --- Agent Avatar (colored circle with initials) ---
+// ── Heuristic status emoji map ──────────────────────────────────────────
 
-function AgentAvatar({ agent, isActive }: { agent: Agent; isActive: boolean }) {
-  const providerColor = getProviderColor(agent.provider)
-  const initials = agent.name.slice(0, 2).toUpperCase()
-
-  return (
-    <div
-      className={`relative w-8 h-8 rounded-lg ${providerColor} flex items-center justify-center text-xs font-bold text-white transition-all duration-200 ${
-        isActive ? 'ring-2 ring-white/30 scale-105' : 'opacity-80'
-      }`}
-    >
-      {initials}
-    </div>
-  )
+const HEURISTIC_EMOJI: Record<string, { emoji: string; label: string; color: string }> = {
+  working: { emoji: '🟡', label: 'Working', color: 'text-yellow-400' },
+  blocked: { emoji: '🔴', label: 'Blocked', color: 'text-red-400' },
+  done: { emoji: '🔵', label: 'Done', color: 'text-blue-400' },
+  idle: { emoji: '🟢', label: 'Idle', color: 'text-green-400' },
+  error: { emoji: '⛔', label: 'Error', color: 'text-red-500' },
 }
 
-// --- Status Dot ---
+/** Derive heuristic status from agentStore + heuristic buffer */
+function getHeuristicStatus(
+  agentStatus: Agent['status'],
+  bufferLastStatus: string | null,
+  lastActivity: number | null
+): { emoji: string; label: string; color: string } {
+  if (agentStatus === 'error') return HEURISTIC_EMOJI.error
+  if (agentStatus === 'offline') return { emoji: '⚪', label: 'Offline', color: 'text-zinc-500' }
 
-function StatusDot({ status }: { status: AgentStatus }) {
-  const color = getStatusColor(status)
-  const isRunning = status === 'running'
+  if (bufferLastStatus === 'running') {
+    const idleDuration = lastActivity ? (Date.now() - lastActivity) / 1000 : 0
+    if (idleDuration > 15) return HEURISTIC_EMOJI.blocked
+    return HEURISTIC_EMOJI.working
+  }
+
+  // Recently transitioned to idle (within 10s) = done
+  if (agentStatus === 'idle' && lastActivity && (Date.now() - lastActivity) < 10000) {
+    return HEURISTIC_EMOJI.done
+  }
+
+  return HEURISTIC_EMOJI.idle
+}
+
+// --- Heuristic Status Badge ---
+
+function HeuristicBadge({ agentId, status }: { agentId: string; status: Agent['status'] }) {
+  const buffer = useStatusHeuristicsStore((s) => s.buffers[agentId])
+  const heuristic = getHeuristicStatus(
+    status,
+    buffer?.lastStatus || null,
+    buffer?.lastActivity || null
+  )
 
   return (
     <span
-      className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-c-card ${color} ${
-        isRunning ? 'animate-pulse-dot' : ''
-      }`}
-      title={status}
-    />
+      className={`text-[11px] ${heuristic.color}`}
+      title={heuristic.label}
+    >
+      {heuristic.emoji}
+    </span>
   )
 }
 
-// --- Single Agent Row ---
-
-interface AgentRowProps {
-  agent: Agent
-  isActive: boolean
-  index: number
-  onSelect: () => void
-  onDragStart: (index: number) => void
-  onDragOver: (e: React.DragEvent, index: number) => void
-  onDrop: (index: number) => void
-}
+// --- Agent Row ---
 
 function AgentRow({
   agent,
   isActive,
-  index,
   onSelect,
-  onDragStart,
-  onDragOver,
-  onDrop,
-}: AgentRowProps) {
-  const [isDragging, setIsDragging] = useState(false)
-  const [isDragOver, setIsDragOver] = useState(false)
-  const [isExpanded, setIsExpanded] = useState(false)
-  const [isDescHovered, setIsDescHovered] = useState(false)
-
+  onExecute,
+  onCancel,
+  onDelete,
+  executionStatus
+}: {
+  agent: Agent
+  isActive: boolean
+  onSelect: () => void
+  onExecute?: (agentId: string) => void
+  onCancel?: (agentId: string) => void
+  onDelete?: (agentId: string) => void
+  executionStatus?: 'running' | 'idle' | 'error'
+}) {
+  const roleMeta = getRoleMeta(agent.role)
   return (
     <div
-      className={`group relative flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 select-none ${
-        isActive
-          ? 'bg-c-surface border border-c-border-strong/50'
-          : 'hover:bg-c-surface/50 border border-transparent'
-      } ${isDragging ? 'opacity-40 scale-95' : ''} ${      isDragOver ? 'border-mothership-500/50 bg-c-surface/30' : ''}`}
       onClick={onSelect}
-      draggable
-      onDragStart={(e) => {
-        setIsDragging(true)
-        e.dataTransfer.effectAllowed = 'move'
-        e.dataTransfer.setData('text/plain', String(index))
-        onDragStart(index)
-      }}
-      onDragEnd={() => setIsDragging(false)}
-      onDragOver={(e) => {
-        e.preventDefault()
-        e.dataTransfer.dropEffect = 'move'
-        setIsDragOver(true)
-        onDragOver(e, index)
-      }}
-      onDragLeave={() => setIsDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setIsDragOver(false)
-        onDrop(index)
-      }}
+      className={`group flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-all duration-150 ${
+        isActive
+          ? 'bg-mothership-500/10 border border-mothership-500/20'
+          : 'hover:bg-c-surface/40 border border-transparent'
+      }`}
     >
-      {/* Drag handle */}
-      <div className="opacity-0 group-hover:opacity-40 transition-opacity cursor-grab active:cursor-grabbing">
-        <GripVertical className="w-3 h-3 text-c-muted" />
-      </div>
-
-      {/* Avatar with status dot */}
-      <div className="relative flex-shrink-0">
-        <AgentAvatar agent={agent} isActive={isActive} />
-        <StatusDot status={agent.status} />
+      {/* Role avatar */}
+      <div className={`w-7 h-7 rounded-lg ${getRoleColor(agent.role)} flex items-center justify-center text-[10px] flex-shrink-0`}>
+        {roleMeta.icon}
       </div>
 
       {/* Name + description */}
       <div className="flex-1 min-w-0">
-        <div className={`text-xs font-medium truncate ${isActive ? 'text-c-text' : 'text-c-text-dim'}`}>
+        <div className={`text-[11px] font-medium truncate ${isActive ? 'text-c-text' : 'text-c-text-dim'}`}>
           {agent.name}
         </div>
-        <div className="relative">
-          <div
-            title={agent.description}
-            className={`text-[10px] text-c-muted cursor-pointer hover:text-c-muted-light transition-colors ${
-              isExpanded ? 'whitespace-normal break-words' : 'truncate'
-            }`}
-            onMouseEnter={() => setIsDescHovered(true)}
-            onMouseLeave={() => setIsDescHovered(false)}
-            onClick={(e) => {
-              e.stopPropagation()
-              setIsExpanded(!isExpanded)
-            }}
-          >
-            {agent.description}
-          </div>
-          {/* Custom tooltip — only shown when truncated and not expanded */}
-          {!isExpanded && isDescHovered && agent.description.length > 40 && (
-            <div className="absolute left-0 bottom-full mb-1 z-50 max-w-[220px] px-2.5 py-1.5 rounded-md bg-c-bg border border-c-border shadow-lg text-[10px] text-c-text-dim leading-relaxed pointer-events-none animate-tooltip-in">
-              {agent.description}
-              <div className="absolute left-3 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-c-border" />
-            </div>
-          )}
-        </div>
+        <div className="text-[9px] text-c-muted truncate">{agent.description}</div>
       </div>
 
-      {/* Model badge (if known) */}
-      {agent.model && isActive && (
-        <span className="text-[9px] px-1.5 py-0.5 rounded bg-c-surface-hover/50 text-c-muted flex-shrink-0">
-          {agent.model}
-        </span>
-      )}
+      {/* Heuristic status badge */}
+      <HeuristicBadge agentId={agent.id} status={agent.status} />
+
+      {/* Execution controls - only show on hover */}
+      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {executionStatus === 'running' ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onCancel?.(agent.id)
+            }}
+            className="p-0.5 text-c-muted hover:text-red-400 hover:bg-c-surface/50 rounded transition-colors"
+            title="Cancel execution"
+          >
+            <Square className="w-3 h-3" />
+          </button>
+        ) : (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onExecute?.(agent.id)
+            }}
+            className="p-0.5 text-c-muted hover:text-green-400 hover:bg-c-surface/50 rounded transition-colors"
+            title="Execute agent"
+          >
+            <Play className="w-3 h-3" />
+          </button>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete?.(agent.id)
+          }}
+          className="p-0.5 text-c-muted hover:text-red-400 hover:bg-c-surface/50 rounded transition-colors"
+          title="Delete agent"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
     </div>
   )
 }
 
-// --- Main Sidebar Component ---
+// --- Main Sidebar ---
+
+const CATEGORY_LABELS: Record<TeamCategory, string> = {
+  engineering: 'Engineering',
+  operations: 'Operations',
+  quality: 'Quality',
+  'data-ai': 'Data & AI',
+}
+
+const CATEGORY_ORDER: TeamCategory[] = ['engineering', 'operations', 'quality', 'data-ai']
 
 export function AgentSidebar() {
-  const { agents, activeAgentId, setActiveAgent, reorderAgents } = useAgentStore()
+  const { agents, activeAgentId, setActiveAgent } = useAgentStore()
+  const { startGroup } = useExecutionEngineStore()
   const [showAddDialog, setShowAddDialog] = useState(false)
-  const dragIndexRef = useRef<number | null>(null)
-
-  const handleDragStart = useCallback((index: number) => {
-    dragIndexRef.current = index
-  }, [])
-
-  const handleDragOver = useCallback((_e: React.DragEvent, _index: number) => {
-    // Visual feedback handled by state
-  }, [])
-
-  const handleDrop = useCallback(
-    (dropIndex: number) => {
-      const dragIndex = dragIndexRef.current
-      if (dragIndex !== null && dragIndex !== dropIndex) {
-        reorderAgents(dragIndex, dropIndex)
-      }
-      dragIndexRef.current = null
-    },
-    [reorderAgents]
-  )
+  const [executionStatusMap, setExecutionStatusMap] = useState<Record<string, 'running' | 'idle' | 'error'>>({})
 
   const runningCount = agents.filter((a) => a.status === 'running').length
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<AgentCategory>>(new Set())
 
-  const toggleCategory = useCallback((cat: AgentCategory) => {
-    setCollapsedCategories((prev) => {
-      const next = new Set(prev)
-      if (next.has(cat)) next.delete(cat)
-      else next.add(cat)
-      return next
-    })
+  const handleExecuteAgent = useCallback(async (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId)
+    if (!agent) return
+
+    setExecutionStatusMap(prev => ({...prev, [agentId]: 'running'}))
+    try {
+      const roleMeta = getRoleMeta(agent.role)
+      const groupId = await startGroup({
+        name: `Task for ${agent.name}`,
+        agents: [{
+          agent_id: agent.id,
+          prompt: agent.systemPrompt || roleMeta.systemPrompt
+        }]
+      })
+      if (!groupId) {
+        setExecutionStatusMap(prev => ({...prev, [agentId]: 'error'}))
+      }
+    } catch (error) {
+      console.error('Failed to start execution:', error)
+      setExecutionStatusMap(prev => ({...prev, [agentId]: 'error'}))
+    } finally {
+      setTimeout(() => {
+        setExecutionStatusMap(prev => ({...prev, [agentId]: 'idle'}))
+      }, 2000)
+    }
+  }, [agents, startGroup])
+
+  const handleCancelAgent = useCallback((agentId: string) => {
+    // TODO: Implement cancellation logic
+    setExecutionStatusMap(prev => ({...prev, [agentId]: 'idle'}))
   }, [])
 
-  const CATEGORY_LABELS: Record<AgentCategory, string> = {
-    coding: 'Coding',
-    research: 'Research',
-    ops: 'Operations',
-    creative: 'Creative',
-  }
-
-  const CATEGORY_ORDER: AgentCategory[] = ['coding', 'research', 'ops', 'creative']
+  const handleDeleteAgent = useCallback((agentId: string) => {
+    // TODO: Implement deletion logic
+  }, [])
 
   const categoryGroups = useMemo(() => {
     return CATEGORY_ORDER
@@ -203,80 +217,48 @@ export function AgentSidebar() {
   return (
     <aside className="h-full border-r border-c-border bg-c-card flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-c-border">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-sm font-semibold text-c-text tracking-wide">
-              MOTHERSHIP
-            </h1>
-            <p className="text-[10px] text-c-muted mt-0.5">AI Control Center</p>
-          </div>
-          <ThemeToggle />
-          <button
-            className="p-1.5 rounded-md hover:bg-c-surface text-c-muted hover:text-c-text-dim transition-colors"
-            title="Settings"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-        </div>
+      <div className="px-4 pt-3 pb-2 border-b border-c-border">
+        <h1 className="text-xs font-bold text-c-text tracking-wide">MOTHERSHIP</h1>
+        <p className="text-[9px] text-c-muted mt-0.5">Engineering Team</p>
       </div>
 
-      {/* Agent list grouped by category */}
-      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+      {/* Agent list */}
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-2">
         {categoryGroups.map(({ category, label, agents: groupAgents }) => (
           <div key={category}>
-            <button
-              onClick={() => toggleCategory(category)}
-              className="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium text-c-muted uppercase tracking-wider hover:text-c-text-dim transition-colors"
-            >
-              <ChevronDown
-                className={`w-3 h-3 transition-transform ${
-                  collapsedCategories.has(category) ? '-rotate-90' : ''
-                }`}
-              />
-              {label}
-              <span className="ml-auto text-[9px] text-c-muted-light font-normal">
-                {groupAgents.length}
-              </span>
-            </button>
-            {!collapsedCategories.has(category) &&
-              groupAgents.map((agent) => {
-                const globalIndex = agents.indexOf(agent)
-                return (
-                  <AgentRow
-                    key={agent.id}
-                    agent={agent}
-                    isActive={activeAgentId === agent.id}
-                    index={globalIndex}
-                    onSelect={() => setActiveAgent(agent.id)}
-                    onDragStart={handleDragStart}
-                    onDragOver={handleDragOver}
-                    onDrop={handleDrop}
-                  />
-                )
-              })}
+            {/* Category header */}
+            <div className="px-1.5 py-1 text-[8px] font-semibold text-c-muted-light uppercase tracking-widest">
+              {label} · {groupAgents.length}
+            </div>
+            <div className="space-y-0.5 mt-0.5">
+              {groupAgents.map((agent) => (
+                <AgentRow
+                  key={agent.id}
+                  agent={agent}
+                  isActive={activeAgentId === agent.id}
+                  onSelect={() => setActiveAgent(agent.id)}
+                  onExecute={handleExecuteAgent}
+                  onCancel={handleCancelAgent}
+                  onDelete={handleDeleteAgent}
+                  executionStatus={executionStatusMap[agent.id] || 'idle'}
+                />
+              ))}
+            </div>
           </div>
         ))}
       </div>
 
       {/* Footer */}
       <div className="p-3 border-t border-c-border">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] text-c-muted">
-            {agents.length} agents
-            {runningCount > 0 && (
-              <span className="text-status-running ml-1">
-                {runningCount} active
-              </span>
-            )}
-          </span>
+        <div className="text-[9px] text-c-muted mb-2">
+          {agents.length} team members{runningCount > 0 && ` · ${runningCount} active`}
         </div>
         <button
           onClick={() => setShowAddDialog(true)}
-          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-c-border-strong text-[10px] text-c-muted hover:text-c-muted-light hover:bg-c-surface/50 transition-all"
+          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-c-border-strong text-[9px] text-c-muted hover:text-c-muted-light hover:bg-c-surface/50 transition-all"
         >
           <Plus className="w-3 h-3" />
-          Add Agent
+          Add Team Member
         </button>
       </div>
 

@@ -22,7 +22,7 @@ const STEP_ICONS: Record<OnboardingStep, React.ReactNode> = {
 }
 
 const STEP_TITLES: Record<OnboardingStep, string> = {
-  welcome: 'Welcome to Mothership',
+  welcome: 'Welcome to Crew',
   agents: 'Meet Your Agents',
   project: 'Start Your First Project',
   complete: "You're Ready!",
@@ -133,7 +133,7 @@ function WelcomeStep() {
       </div>
       <div>
         <h3 className="text-lg font-semibold text-c-primary mb-2">
-          Welcome to Mothership
+          Welcome to Crew
         </h3>
         <p className="text-sm text-c-secondary max-w-sm mx-auto">
           Your desktop AI control center. Unify multiple AI agents into one
@@ -254,7 +254,7 @@ function CompleteStep() {
           You're All Set!
         </h3>
         <p className="text-sm text-c-secondary max-w-sm mx-auto">
-          Mothership is ready. Start by selecting an agent from the sidebar
+          Crew is ready. Start by selecting an agent from the sidebar
           and opening a terminal. Your workspace awaits.
         </p>
       </div>

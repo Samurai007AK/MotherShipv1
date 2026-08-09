@@ -12,6 +12,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -19,6 +20,7 @@ serde_json = "1"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+futures = "0.3"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
@@ -39,6 +41,9 @@ tracing-subscriber = "0.3"
 # Terminal PTY (per-agent sessions)
 portable-pty = "0.8"
 
+# Cross-platform process signals (SIGSTOP/SIGCONT)
+libc = "0.2"
+
 # SQLite for memory/context persistence
 rusqlite = { version = "0.31", features = ["bundled"] }
 
@@ -53,6 +58,9 @@ reqwest = { version = "0.12", features = ["json"] }
 
 # Compression for cold storage
 flate2 = "1"
+
+# URL parsing for browser window management
+url = "2"
 
 [features]
 default = ["custom-protocol"]

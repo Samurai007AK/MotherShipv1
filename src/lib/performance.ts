@@ -1,4 +1,4 @@
-// Performance monitoring utilities for Mothership
+// Performance monitoring utilities for Crew
 
 export interface PerformanceMetrics {
   idleMemoryMB: number

@@ -31,8 +31,9 @@ interface SplitPaneContainerProps {
   splitPanes: SplitPaneState[]
   visible: boolean
   onRegisterRef: (agentId: string, handle: TerminalPaneHandle | null) => void
-  onExit: (agentId: string) => void
+  onExit: (agentId: string, code: number) => void
   onError: (agentId: string, message: string) => void
+  onReconnect?: (agentId: string) => void
 }
 
 export function SplitPaneContainer({
@@ -44,6 +45,7 @@ export function SplitPaneContainer({
   onRegisterRef,
   onExit,
   onError,
+  onReconnect,
 }: SplitPaneContainerProps) {
   const { removeSplitPane, activeSplitPaneId, setActiveSplitPane } = useWorkspaceStore()
 
@@ -62,8 +64,9 @@ export function SplitPaneContainer({
         workingDir={primaryWorkingDir}
         visible={visible}
         ref={(handle) => onRegisterRef(primaryAgentId, handle)}
-        onExit={() => onExit(primaryAgentId)}
+        onExit={(code) => onExit(primaryAgentId, code)}
         onError={(msg) => onError(primaryAgentId, msg)}
+        onReconnect={onReconnect ? () => onReconnect(primaryAgentId) : undefined}
       />
     )
   }
@@ -86,8 +89,9 @@ export function SplitPaneContainer({
             workingDir={primaryWorkingDir}
             visible={visible}
             ref={(handle) => onRegisterRef(primaryAgentId, handle)}
-            onExit={() => onExit(primaryAgentId)}
+            onExit={(code) => onExit(primaryAgentId, code)}
             onError={(msg) => onError(primaryAgentId, msg)}
+            onReconnect={onReconnect ? () => onReconnect(primaryAgentId) : undefined}
           />
         </div>
       </Panel>
@@ -105,6 +109,7 @@ export function SplitPaneContainer({
           onRegisterRef={onRegisterRef}
           onExit={onExit}
           onError={onError}
+          onReconnect={onReconnect}
         />
       ))}
     </Group>
@@ -121,8 +126,9 @@ interface SplitPaneItemProps {
   onClose: () => void
   onFocus: () => void
   onRegisterRef: (agentId: string, handle: TerminalPaneHandle | null) => void
-  onExit: (agentId: string) => void
+  onExit: (agentId: string, code: number) => void
   onError: (agentId: string, message: string) => void
+  onReconnect?: (agentId: string) => void
 }
 
 function SplitPaneItem({
@@ -135,6 +141,7 @@ function SplitPaneItem({
   onRegisterRef,
   onExit,
   onError,
+  onReconnect,
 }: SplitPaneItemProps) {
   return (
     <>
@@ -163,8 +170,9 @@ function SplitPaneItem({
             agentId={`${pane.agentId}-split-${pane.id}`}
             visible={visible}
             ref={(handle) => onRegisterRef(`${pane.agentId}-split-${pane.id}`, handle)}
-            onExit={() => onExit(pane.agentId)}
+            onExit={(code) => onExit(pane.agentId, code)}
             onError={(msg) => onError(pane.agentId, msg)}
+            onReconnect={onReconnect ? () => onReconnect(pane.agentId) : undefined}
           />
         </div>
       </Panel>

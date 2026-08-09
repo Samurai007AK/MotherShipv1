@@ -31,9 +31,10 @@ describe('agentStore', () => {
       id: 'test-agent',
       name: 'Test Agent',
       provider: 'claude',
+      role: 'software-engineer',
       status: 'idle',
       description: 'Test',
-      category: 'coding',
+      category: 'engineering',
     }
     useAgentStore.getState().registerAgent(newAgent)
     const { agents } = useAgentStore.getState()

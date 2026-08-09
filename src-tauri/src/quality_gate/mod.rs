@@ -7,6 +7,7 @@
 // QualityGateSummary = simplified summary for LoopController (loop_controller module)
 // QualityGateReport = combined result containing Vec<GateResult>
 
+pub mod code_reviewer;
 pub mod commit_guard;
 
 use serde::{Deserialize, Serialize};

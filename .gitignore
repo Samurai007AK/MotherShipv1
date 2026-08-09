@@ -43,3 +43,21 @@ NUL
 # --- Logs ---
 *.log
 npm-debug.log*
+
+# --- Generated reports ---
+coverage/
+graphify-out/
+graph.html
+
+# --- Local AI agent state ---
+.claude/
+.ocx/
+.omo/
+.opencode/
+
+# --- PyInstaller intermediates ---
+sidecars/*/build/
+
+# --- Accidental junk ---
+src-tauri/C:UsersUserAppDataLocalTempwarnings.txt
+"src-tauri*

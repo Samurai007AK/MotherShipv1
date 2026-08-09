@@ -123,7 +123,7 @@ export class MCPClient {
         resources: {},
       },
       clientInfo: {
-        name: 'Mothership',
+        name: 'Crew',
         version: '0.1.0',
       },
     })

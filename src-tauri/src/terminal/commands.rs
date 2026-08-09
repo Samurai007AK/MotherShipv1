@@ -3,8 +3,8 @@
 // Tauri IPC commands for terminal/PTY operations.
 // PTY output is streamed to the frontend via Tauri event channels.
 
-use super::{PtyConfig, PtyEvent, PtySessionInfo, TerminalManager};
-use tauri::{AppHandle, Emitter, State};
+use super::{PtyConfig, PtySessionInfo, TerminalManager};
+use tauri::{AppHandle, State};
 
 /// Spawn a new PTY session for an agent and start streaming output via events.
 ///
@@ -66,4 +66,23 @@ pub async fn get_terminal_session(
     state: State<'_, TerminalManager>,
 ) -> Result<Option<PtySessionInfo>, String> {
     Ok(state.get_session_info(&session_id))
+}
+
+/// Pause a PTY session — suspends the child process to save RAM.
+/// The session can be resumed later with `resume_terminal_session`.
+#[tauri::command]
+pub async fn pause_terminal_session(
+    session_id: String,
+    state: State<'_, TerminalManager>,
+) -> Result<(), String> {
+    state.pause_session(&session_id)
+}
+
+/// Resume a paused PTY session — continues the child process.
+#[tauri::command]
+pub async fn resume_terminal_session(
+    session_id: String,
+    state: State<'_, TerminalManager>,
+) -> Result<(), String> {
+    state.resume_session(&session_id)
 }

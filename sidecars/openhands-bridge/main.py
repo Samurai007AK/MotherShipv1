@@ -218,7 +218,6 @@ def handle_list_files(params: dict, req_id):
     path = params.get("path", os.getcwd())
 
     try:
-        import os
         files = []
         for entry in os.scandir(path):
             files.append({

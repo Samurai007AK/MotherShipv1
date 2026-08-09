@@ -9,16 +9,19 @@ import { useAgentStore } from '../../stores/agentStore'
 import { NoteEditor } from './NoteEditor'
 import { Timeline } from './Timeline'
 import { HandoffDialog } from './HandoffDialog'
+import { ColdStoragePanel } from './ColdStoragePanel'
+import { ReconsolidationPanel } from './ReconsolidationPanel'
 import { ModelRouterPanel } from '../model-router/ModelRouterPanel'
 import { WarRoom } from '../war-room/WarRoom'
 import { TaskGraph } from '../task-graph/TaskGraph'
 import { BrowserConnector } from '../browser/BrowserConnector'
 import { MCPPanel } from '../mcp/MCPPanel'
+import { ExecutionPanel } from '../execution/ExecutionPanel'
+import { PerformancePanel } from '../performance/PerformancePanel'
 import {
   StickyNote,
   Clock,
   Search,
-  LayoutList,
   Plus,
   Trash2,
   FileText,
@@ -33,41 +36,96 @@ import {
   Network,
   Globe,
   Plug,
+  HardDrive,
+  Activity,
+  Play,
+  AlertTriangle,
+  ChevronDown,
+  MoreHorizontal,
+  LayoutList,
 } from 'lucide-react'
 
-// --- Tab Bar ---
+// --- Core tabs (always visible) ---
 
-const TABS: { id: MemoryTab; label: string; icon: React.ReactNode }[] = [
+const CORE_TABS: { id: MemoryTab; label: string; icon: React.ReactNode }[] = [
   { id: 'notes', label: 'Notes', icon: <StickyNote className="w-3 h-3" /> },
   { id: 'context', label: 'Context', icon: <Clock className="w-3 h-3" /> },
-  { id: 'timeline', label: 'Timeline', icon: <LayoutList className="w-3 h-3" /> },
   { id: 'search', label: 'Search', icon: <Search className="w-3 h-3" /> },
+  { id: 'reconsolidation', label: 'Flags', icon: <AlertTriangle className="w-3 h-3" /> },
+]
+
+const ADVANCED_TABS: { id: MemoryTab; label: string; icon: React.ReactNode }[] = [
+  { id: 'timeline', label: 'Timeline', icon: <LayoutList className="w-3 h-3" /> },
+  { id: 'storage', label: 'Storage', icon: <HardDrive className="w-3 h-3" /> },
   { id: 'models', label: 'Models', icon: <Bot className="w-3 h-3" /> },
   { id: 'warroom', label: 'War Room', icon: <Radio className="w-3 h-3" /> },
   { id: 'graph', label: 'Graph', icon: <Network className="w-3 h-3" /> },
   { id: 'browser', label: 'Browser', icon: <Globe className="w-3 h-3" /> },
   { id: 'mcp', label: 'MCP', icon: <Plug className="w-3 h-3" /> },
+  { id: 'execution', label: 'Execution', icon: <Play className="w-3 h-3" /> },
+  { id: 'performance', label: 'Perf', icon: <Activity className="w-3 h-3" /> },
 ]
 
 function TabBar() {
   const { activeTab, setActiveTab } = useMemoryStore()
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const isAdvanced = ADVANCED_TABS.some((t) => t.id === activeTab)
 
   return (
-    <div className="flex border-b border-c-border">
-      {TABS.map((tab) => (
+    <div>
+      {/* Core tabs */}
+      <div className="flex border-b border-c-border">
+        {CORE_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] font-medium transition-colors ${
+              activeTab === tab.id
+                ? 'text-c-text border-b-2 border-mothership-500'
+                : 'text-c-muted hover:text-c-muted-light'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+        {/* Advanced toggle */}
         <button
-          key={tab.id}
-          onClick={() => setActiveTab(tab.id)}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-medium transition-colors ${
-            activeTab === tab.id
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className={`flex items-center justify-center gap-1 px-2 py-2 text-[10px] font-medium transition-colors border-b-2 border-transparent ${
+            isAdvanced || showAdvanced
               ? 'text-c-text border-b-2 border-mothership-500'
               : 'text-c-muted hover:text-c-muted-light'
           }`}
+          title="More tools"
         >
-          {tab.icon}
-          {tab.label}
+          <MoreHorizontal className="w-3 h-3" />
+          <ChevronDown className={`w-2.5 h-2.5 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
         </button>
-      ))}
+      </div>
+
+      {/* Advanced tabs (collapsible) */}
+      {(showAdvanced || isAdvanced) && (
+        <div className="flex flex-wrap border-b border-c-border/50 bg-c-surface/20">
+          {ADVANCED_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id)
+                setShowAdvanced(false)
+              }}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-[9px] font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'text-c-text bg-c-surface/50'
+                  : 'text-c-muted hover:text-c-muted-light hover:bg-c-surface/20'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -346,7 +404,7 @@ function formatTimeAgo(dateStr: string): string {
 
 // --- Main Component ---
 
-export function MemoryPanel() {
+export function MemoryPanel({ hideHeader, fullWidth }: { hideHeader?: boolean; fullWidth?: boolean }) {
   const { activeTab, loadFromBackend } = useMemoryStore()
 
   // Load data from SQLite backend on mount
@@ -355,26 +413,34 @@ export function MemoryPanel() {
   }, [loadFromBackend])
 
   return (
-    <aside className="h-full border-l border-c-border bg-c-card flex flex-col overflow-hidden">
+    <aside className={`h-full bg-c-card flex flex-col overflow-hidden ${
+      fullWidth ? 'flex-1' : 'border-l border-c-border w-72'
+    }`}>
       {/* Header */}
-      <div className="px-4 pt-3 pb-0">
-        <span className="text-xs font-medium text-c-muted">Memory</span>
-      </div>
+      {!hideHeader && (
+        <div className="px-4 pt-3 pb-0">
+          <span className="text-xs font-medium text-c-muted">Memory</span>
+        </div>
+      )}
 
       {/* Tabs */}
       <TabBar />
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden">
+      <div className={`flex-1 overflow-hidden ${fullWidth ? 'flex flex-col' : ''}`}>
         {activeTab === 'notes' && <NotesTab />}
         {activeTab === 'context' && <ContextTab />}
         {activeTab === 'timeline' && <Timeline />}
         {activeTab === 'search' && <SearchTab />}
+        {activeTab === 'storage' && <ColdStoragePanel />}
         {activeTab === 'models' && <ModelRouterPanel />}
         {activeTab === 'warroom' && <WarRoom />}
         {activeTab === 'graph' && <TaskGraph />}
         {activeTab === 'browser' && <BrowserConnector />}
         {activeTab === 'mcp' && <MCPPanel />}
+        {activeTab === 'execution' && <ExecutionPanel />}
+        {activeTab === 'performance' && <PerformancePanel />}
+        {activeTab === 'reconsolidation' && <ReconsolidationPanel />}
       </div>
     </aside>
   )

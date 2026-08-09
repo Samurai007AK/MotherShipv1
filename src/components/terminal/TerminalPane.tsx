@@ -23,6 +23,8 @@ export interface TerminalPaneHandle {
   clear: () => void
   spawn: () => Promise<PtySessionInfo | null>
   close: () => Promise<void>
+  /** The session ID, once spawned (null before spawn, null in AI mode) */
+  sessionId: string | null
 }
 
 interface TerminalPaneProps {
@@ -33,16 +35,19 @@ interface TerminalPaneProps {
   model?: string
   onExit?: (code: number) => void
   onError?: (message: string) => void
+  /** Called after a reconnect successfully spawns a new PTY session */
+  onReconnect?: () => void
 }
 
 export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
-  function TerminalPane({ agentId, workingDir, visible = true, model, onExit, onError }, ref) {
+  function TerminalPane({ agentId, workingDir, visible = true, model, onExit, onError, onReconnect }, ref) {
     const agent = useAgentStore((s) => s.agents.find((a) => a.id === agentId))
     // Use explicit model prop or fall back to agent's configured model
     const aiModel = model || agent?.model
 
     const {
       containerRef,
+      sessionId,
       isConnected,
       isPaused,
       hasError,
@@ -69,7 +74,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       clearSearch,
       copySelection,
       pasteFromClipboard,
-    } = useTerminal({ agentId, workingDir, visible, aiModel, aiSystemPrompt: agent?.systemPrompt || agent?.description, onExit, onError })
+    } = useTerminal({ agentId, workingDir, visible, aiModel, aiSystemPrompt: agent?.systemPrompt || agent?.description, onExit, onError, onReconnect })
 
     const [searchQuery, setSearchQuery] = useState('')
     const searchInputRef = useRef<HTMLInputElement>(null)
@@ -91,6 +96,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       },
       spawn,
       close,
+      sessionId,
     }))
 
     return (

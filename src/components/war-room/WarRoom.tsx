@@ -1,6 +1,8 @@
 import { useState, memo } from 'react'
 import { useWarRoomStore } from '../../stores/warRoomStore'
 import { useAgentStore, type AgentProvider } from '../../stores/agentStore'
+import { useExecutionEngineStore } from '../../stores/executionEngineStore'
+import { useMemoryStore } from '../../stores/memoryStore'
 import {
   Radio,
   LayoutGrid,
@@ -11,6 +13,7 @@ import {
   AlertCircle,
   Loader2,
   ChevronRight,
+  Play,
   X,
 } from 'lucide-react'
 
@@ -150,8 +153,11 @@ function BroadcastView({
   agents: ReturnType<typeof useAgentStore.getState>['agents']
 }) {
   const { broadcastToAgents } = useWarRoomStore()
+  const startGroup = useExecutionEngineStore((s) => s.startGroup)
+  const setActiveTab = useMemoryStore((s) => s.setActiveTab)
   const [prompt, setPrompt] = useState('')
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set())
+  const [isStartingEngine, setIsStartingEngine] = useState(false)
 
   const toggleAgent = (id: string) => {
     setSelectedAgents((prev) => {
@@ -172,6 +178,28 @@ function BroadcastView({
 
     broadcastToAgents(prompt, Array.from(selectedAgents), providers)
     setPrompt('')
+  }
+
+  const handleRunInEngine = async () => {
+    if (!prompt.trim() || selectedAgents.size === 0 || isStartingEngine) return
+
+    setIsStartingEngine(true)
+
+    const groupId = await startGroup({
+      name: `War Room: ${prompt.slice(0, 40)}${prompt.length > 40 ? '...' : ''}`,
+      agents: Array.from(selectedAgents).map((agentId) => ({
+        agent_id: agentId,
+        prompt: prompt.trim(),
+      })),
+      initial_context: undefined,
+    })
+
+    if (groupId) {
+      // Switch to the Execution tab to show real-time progress
+      setActiveTab('execution')
+    }
+
+    setIsStartingEngine(false)
   }
 
   // Get responses for current broadcast
@@ -225,8 +253,22 @@ function BroadcastView({
             onClick={handleBroadcast}
             disabled={!prompt.trim() || selectedAgents.size === 0}
             className="px-3 py-1 bg-mothership-500 text-white text-[10px] rounded hover:bg-mothership-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Broadcast (stub responses)"
           >
             <Send className="w-3 h-3" />
+          </button>
+          <button
+            onClick={handleRunInEngine}
+            disabled={!prompt.trim() || selectedAgents.size === 0 || isStartingEngine}
+            className="flex items-center gap-1 px-3 py-1 bg-green-600/80 text-white text-[10px] rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Run in Execution Engine (real parallel execution)"
+          >
+            {isStartingEngine ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Play className="w-3 h-3" />
+            )}
+            Run in Engine
           </button>
         </div>
       </div>
@@ -357,6 +399,7 @@ function ChainView({
   onSetActiveChain: (id: string | null) => void
 }) {
   const { executeChain } = useWarRoomStore()
+  const setActiveTab = useMemoryStore((s) => s.setActiveTab)
   const [showCreate, setShowCreate] = useState(false)
   const [chainName, setChainName] = useState('')
   const [steps, setSteps] = useState<{ agentId: string; prompt: string }[]>([
@@ -521,6 +564,15 @@ function ChainView({
                     Run Chain
                   </button>
                 )}
+                {chain.status === 'in_progress' && (
+                  <button
+                    onClick={() => setActiveTab('execution')}
+                    className="flex items-center gap-1 px-2 py-0.5 bg-green-600/70 text-white text-[10px] rounded hover:bg-green-600 transition-colors"
+                  >
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    View Progress
+                  </button>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -557,7 +609,7 @@ function ChainView({
                         </div>
                       </div>
                       {step.output && (
-                        <div className="ml-8 mt-1 p-2 bg-surface-subtle rounded text-[10px] text-c-primary">
+                        <div className="ml-8 mt-1 p-2 bg-surface-subtle rounded text-[10px] text-c-primary whitespace-pre-wrap max-h-24 overflow-y-auto">
                           {step.output}
                         </div>
                       )}

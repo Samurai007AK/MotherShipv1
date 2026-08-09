@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use super::loop_controller::{IterationRecord, LoopState, Task};
+use super::loop_controller::{IterationRecord, Task};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -154,6 +154,7 @@ impl ArchiveManager {
             tags: Vec::new(),
         };
 
+        let manifest_id = manifest.id.clone();
         let manifest_json = serde_json::to_string_pretty(&manifest)?;
         tokio::fs::write(archive_path.join("manifest.json"), manifest_json).await?;
 
@@ -166,7 +167,7 @@ impl ArchiveManager {
             .unwrap_or(0);
 
         Ok(ArchiveEntry {
-            id: manifest.id,
+            id: manifest_id,
             manifest,
             path: archive_path,
             size_kb,

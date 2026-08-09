@@ -10,7 +10,7 @@ use tokio::fs;
 /// a previously recorded branch in `.mothership/.last-branch`.
 pub struct BranchDetector {
     last_branch_file: PathBuf,
-    project_path: PathBuf,
+    pub project_path: PathBuf,
 }
 
 impl BranchDetector {

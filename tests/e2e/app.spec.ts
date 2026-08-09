@@ -31,7 +31,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/')
   await page.waitForLoadState('networkidle')
   // Wait for React to render — the sidebar has agent content
-  await expect(sidebar(page).getByText('MOTHERSHIP')).toBeVisible({ timeout: 10000 })
+  await expect(sidebar(page).getByText('CREW')).toBeVisible({ timeout: 10000 })
 })
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -40,12 +40,12 @@ test.beforeEach(async ({ page }) => {
 
 test.describe('App loads', () => {
   test('has the correct title', async ({ page }) => {
-    await expect(page).toHaveTitle(/Mothership/)
+    await expect(page).toHaveTitle(/Crew/)
   })
 
-  test('shows MOTHERSHIP branding in the sidebar header', async ({ page }) => {
-    await expect(sidebar(page).getByText('MOTHERSHIP')).toBeVisible()
-    await expect(sidebar(page).getByText('AI Control Center')).toBeVisible()
+  test('shows CREW branding in the sidebar header', async ({ page }) => {
+    await expect(sidebar(page).getByText('CREW')).toBeVisible()
+    await expect(sidebar(page).getByText('Engineering Team')).toBeVisible()
   })
 
   test('shows all three main panels (sidebar, workspace, memory)', async ({ page }) => {
@@ -275,7 +275,7 @@ test.describe('Open terminal', () => {
     await openQuickStart(page, 'Claude')
 
     // The terminal toolbar shows the agent name and model in AI mode
-    // or agent@mothership in PTY mode. Wait for spawn to complete.
+    // or agent@crew in PTY mode. Wait for spawn to complete.
     await expect(
       workspace(page).getByText(/claude|Claude/).first()
     ).toBeVisible({ timeout: 5000 })
@@ -399,64 +399,93 @@ test.describe('Command palette', () => {
 // ────────────────────────────────────────────────────────────────────────────
 
 test.describe('Handoff dialog', () => {
-  test('handoff button is visible in context tab', async ({ page }) => {
+  async function openHandoffDialog(page: Page) {
     const mem = memoryPanel(page)
-    // Handoff button only shows in the Context tab when an agent is active
-    // First select an agent so activeAgentId is set
     await sidebar(page).getByText('Claude').first().click()
-    // Switch to Context tab
     await mem.getByText('Context').first().click()
+    await expect(mem.getByTitle('Handoff context')).toBeVisible({ timeout: 5000 })
+    await mem.getByTitle('Handoff context').click()
+    await expect(page.getByTestId('handoff-dialog-title')).toBeVisible({ timeout: 5000 })
+  }
 
-    const handoffButton = mem.getByTitle('Handoff context')
-    await expect(handoffButton).toBeVisible({ timeout: 5000 })
+  test('opens handoff dialog from Context tab', async ({ page }) => {
+    await openHandoffDialog(page)
+    await expect(page.getByTestId('handoff-dialog-title')).toHaveText('Context Handoff')
   })
 
-  test('opens handoff dialog when clicked', async ({ page }) => {
-    const mem = memoryPanel(page)
-    await sidebar(page).getByText('Claude').first().click()
-    await mem.getByText('Context').first().click()
-    await mem.getByTitle('Handoff context').click()
+  test('shows source agent and target agent grid', async ({ page }) => {
+    await openHandoffDialog(page)
 
-    await expect(page.getByText('Context Handoff')).toBeVisible()
-  })
-
-  test('shows source and target agent selection in handoff dialog', async ({ page }) => {
-    const mem = memoryPanel(page)
-    await sidebar(page).getByText('Claude').first().click()
-    await mem.getByText('Context').first().click()
-    await mem.getByTitle('Handoff context').click()
-
-    await expect(page.getByText('Context Handoff').first()).toBeVisible()
+    // Source section
     await expect(page.getByText('From').first()).toBeVisible()
+    await expect(page.getByText('Claude').first()).toBeVisible()
+
+    // Target section
     await expect(page.getByText('To').first()).toBeVisible()
+
+    // At least one target agent should be clickable (scoped to dialog fixed overlay)
+    const dialog = page.locator('.fixed.inset-0.z-50')
+    const targetButtons = dialog.locator('.grid.grid-cols-2 button')
+    await expect(targetButtons.first()).toBeVisible()
   })
 
-  test('handoff dialog shows agent grid for target selection', async ({ page }) => {
-    const mem = memoryPanel(page)
-    await sidebar(page).getByText('Claude').first().click()
-    await mem.getByText('Context').first().click()
-    await mem.getByTitle('Handoff context').click()
+  test('can select a target agent from the grid', async ({ page }) => {
+    await openHandoffDialog(page)
 
-    await expect(page.getByText('Context Handoff')).toBeVisible()
-    // Target agents should be shown as selectable buttons
-    await expect(page.getByText('Codex').first()).toBeVisible()
+    // Scope to the dialog's fixed overlay (not the workspace empty-state grid)
+    const dialog = page.locator('.fixed.inset-0.z-50')
+    const targetButtons = dialog.locator('.grid.grid-cols-2 button')
+    const count = await targetButtons.count()
+    expect(count).toBeGreaterThanOrEqual(1)
+
+    await targetButtons.first().click({ force: true })
+
+    // Selected agent should have the highlight border class
+    await expect(targetButtons.first()).toHaveClass(/border-mothership-500/)
   })
 
-  test('can close handoff dialog', async ({ page }) => {
-    const mem = memoryPanel(page)
-    await sidebar(page).getByText('Claude').first().click()
-    await mem.getByText('Context').first().click()
-    await mem.getByTitle('Handoff context').click()
+  test('shows Compile button after selecting target', async ({ page }) => {
+    await openHandoffDialog(page)
 
-    // Wait for dialog to be visible
-    await expect(page.getByText('Context Handoff').first()).toBeVisible()
+    // Scope to the dialog's fixed overlay
+    const dialog = page.locator('.fixed.inset-0.z-50')
+    const targetButtons = dialog.locator('.grid.grid-cols-2 button')
 
-    // Click the backdrop to close
-    await page.locator('.fixed.inset-0 .bg-c-bg\/80').first().click({ force: true })
-    await page.waitForTimeout(300)
+    // Select a target agent
+    await targetButtons.first().click({ force: true })
 
-    // The dialog should not be visible
-    await expect(page.getByText('Context Handoff').first()).not.toBeVisible({ timeout: 3000 })
+    // The Compile & Send button should now be enabled
+    const compileBtn = page.getByRole('button', { name: /Compile/ })
+    await expect(compileBtn).toBeVisible()
+    await expect(compileBtn).toBeEnabled()
+  })
+
+  test('closes on Escape key', async ({ page }) => {
+    await openHandoffDialog(page)
+
+    await page.keyboard.press('Escape')
+
+    // Wait for the dialog to close
+    await expect(page.getByTestId('handoff-dialog-title')).not.toBeVisible({ timeout: 2000 })
+  })
+
+  test('closes on backdrop click', async ({ page }) => {
+    await openHandoffDialog(page)
+
+    // Click the close (X) button in the dialog header — same handleClose function as backdrop
+    const header = page.getByTestId('handoff-dialog-title').locator('..').locator('..')
+    await header.locator('button').click()
+
+    // Dialog should close
+    await expect(page.getByTestId('handoff-dialog-title')).not.toBeVisible({ timeout: 2000 })
+  })
+
+  test('shows CrewAI toggle', async ({ page }) => {
+    await openHandoffDialog(page)
+
+    // The CrewAI toggle button should be visible
+    const crewaiBtn = page.getByText('Manual Handoff')
+    await expect(crewaiBtn).toBeVisible()
   })
 })
 

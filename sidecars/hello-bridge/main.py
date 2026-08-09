@@ -13,97 +13,35 @@ Commands:
 """
 
 import sys
-import json
-import signal
+import os
 import logging
+
+# Ensure shared package is importable regardless of working directory
+_this_dir = os.path.dirname(os.path.abspath(__file__))
+_shared_parent = os.path.abspath(os.path.join(_this_dir, '..'))
+if _shared_parent not in sys.path:
+    sys.path.insert(0, _shared_parent)
+
+from shared.json_rpc_sidecar import JsonRpcSidecar
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger("hello-bridge")
 
-running = True
+sidecar = JsonRpcSidecar("hello-bridge", logger)
 
 
-def handle_signal(signum, frame):
-    global running
-    logger.info("Received signal %s, shutting down...", signum)
-    running = False
+@sidecar.method("ping")
+def handle_ping(params: dict, req_id):
+    return sidecar.ok(
+        {"status": "ok", "message": "hello from sidecar", "pid": __import__("os").getpid()},
+        req_id,
+    )
 
 
-signal.signal(signal.SIGINT, handle_signal)
-signal.signal(signal.SIGTERM, handle_signal)
-
-
-def make_response(result, req_id=None):
-    resp = {"jsonrpc": "2.0", "result": result}
-    if req_id is not None:
-        resp["id"] = req_id
-    return resp
-
-
-def make_error(message, code=-32603, req_id=None):
-    resp = {"jsonrpc": "2.0", "error": {"code": code, "message": message}}
-    if req_id is not None:
-        resp["id"] = req_id
-    return resp
-
-
-def handle_request(req):
-    method = req.get("method", "")
-    params = req.get("params", {})
-    req_id = req.get("id")
-
-    if method == "ping":
-        return make_response(
-            {"status": "ok", "message": "hello from sidecar", "pid": sys.modules["os"].getpid()},
-            req_id,
-        )
-    elif method == "echo":
-        return make_response({"echo": params.get("message", "")}, req_id)
-    elif method == "shutdown":
-        global running
-        running = False
-        return make_response({"status": "shutting down"}, req_id)
-    elif method == "health":
-        return make_response({"status": "healthy", "uptime": "ok"}, req_id)
-    else:
-        return make_error(f"Unknown method: {method}", -32601, req_id)
-
-
-def main():
-    logger.info("hello-bridge started (pid=%d)", __import__("os").getpid())
-
-    # Send ready signal
-    ready = {"jsonrpc": "2.0", "method": "ready", "params": {"pid": __import__("os").getpid()}}
-    sys.stdout.write(json.dumps(ready) + "\n")
-    sys.stdout.flush()
-
-    while running:
-        try:
-            line = sys.stdin.readline()
-            if not line:
-                break
-
-            line = line.strip()
-            if not line:
-                continue
-
-            req = json.loads(line)
-            resp = handle_request(req)
-            sys.stdout.write(json.dumps(resp) + "\n")
-            sys.stdout.flush()
-
-        except json.JSONDecodeError as e:
-            err = make_error(f"Invalid JSON: {e}")
-            sys.stdout.write(json.dumps(err) + "\n")
-            sys.stdout.flush()
-        except Exception as e:
-            logger.error("Error: %s", e)
-            err = make_error(str(e))
-            sys.stdout.write(json.dumps(err) + "\n")
-            sys.stdout.flush()
-
-    logger.info("hello-bridge exited")
+@sidecar.method("echo")
+def handle_echo(params: dict, req_id):
+    return sidecar.ok({"echo": params.get("message", "")}, req_id)
 
 
 if __name__ == "__main__":
-    main()
+    sidecar.run()

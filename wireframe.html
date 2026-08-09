@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mothership UI Redesign — Wireframe</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', 'Segoe UI', monospace; color: #e1e1e6; padding: 40px; }
+  
+  .container { max-width: 1100px; margin: 0 auto; }
+
+  h1 { font-size: 20px; font-weight: 600; color: #f0f0f5; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; }
+  h1 small { font-size: 12px; font-weight: 400; color: #888; background: #1a1a24; padding: 2px 8px; border-radius: 4px; }
+  .subtitle { font-size: 12px; color: #666; margin-bottom: 30px; }
+
+  /* ----- Current State ----- */
+  .current-state { margin-bottom: 40px; }
+  .current-state h2 { font-size: 14px; color: #f44; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+  .badge-red { background: #3f1a1a; color: #f66; }
+  .badge-green { background: #1a3f1a; color: #6f6; }
+
+  .app-frame { background: #12121a; border: 1px solid #2a2a35; border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
+
+  /* Top bar */
+  .topbar { display: flex; align-items: center; padding: 8px 16px; background: #181822; border-bottom: 1px solid #2a2a35; gap: 16px; }
+  .topbar .logo { font-size: 13px; font-weight: 600; color: #c084fc; }
+  .topbar .nav { display: flex; gap: 4px; }
+  .topbar .nav a { padding: 4px 10px; font-size: 11px; color: #666; border-radius: 4px; text-decoration: none; }
+  .topbar .nav a.active { color: #e1e1e6; background: #2a2a35; }
+  .topbar .actions { margin-left: auto; display: flex; gap: 8px; }
+  .topbar .actions .btn { padding: 4px 12px; font-size: 11px; border-radius: 4px; border: none; color: #e1e1e6; cursor: pointer; }
+  .topbar .actions .btn-primary { background: #7c3aed; }
+  .topbar .actions .btn-ghost { background: transparent; color: #888; border: 1px solid #2a2a35; }
+
+  /* 3-panel layout */
+  .layout-3panel { display: flex; height: 420px; }
+  
+  /* Left sidebar */
+  .sidebar { width: 200px; border-right: 1px solid #2a2a35; padding: 12px; overflow-y: auto; flex-shrink: 0; }
+  .sidebar-section { margin-bottom: 16px; }
+  .sidebar-section h3 { font-size: 9px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; padding: 0 4px; }
+  .sidebar-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; font-size: 11px; color: #888; border-radius: 4px; cursor: default; }
+  .sidebar-item.active { background: #2a2a35; color: #e1e1e6; }
+  .sidebar-item .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .sidebar-item .count { margin-left: auto; font-size: 10px; color: #555; background: #1a1a24; padding: 0 6px; border-radius: 3px; }
+  .sidebar-item .badge-plus { color: #4ade80; font-size: 10px; }
+
+  /* Main content area */
+  .main-content { flex: 1; display: flex; flex-direction: column; }
+  
+  /* Tab bar within workspace */
+  .workspace-tabs { display: flex; border-bottom: 1px solid #2a2a35; background: #14141e; }
+  .workspace-tabs .tab { padding: 7px 14px; font-size: 11px; color: #666; border-right: 1px solid #2a2a35; cursor: default; display: flex; align-items: center; gap: 6px; }
+  .workspace-tabs .tab.active { color: #e1e1e6; background: #12121a; border-bottom: 1px solid #7c3aed; margin-bottom: -1px; }
+  .workspace-tabs .tab .close { font-size: 10px; color: #444; }
+  .workspace-tabs .tab .pulse { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; }
+
+  /* Terminal + Changes split */
+  .workspace-body { flex: 1; display: flex; }
+  .terminal-pane { flex: 1; padding: 12px; font-size: 12px; color: #a1a1aa; font-family: 'SF Mono', 'Cascadia Code', monospace; line-height: 1.6; overflow-y: auto; }
+  .terminal-pane .prompt { color: #4ade80; }
+  .terminal-pane .output { color: #a1a1aa; }
+  .terminal-pane .cursor { animation: blink 1s step-end infinite; color: #e1e1e6; }
+
+  /* Changes pane */
+  .changes-pane { width: 320px; border-left: 1px solid #2a2a35; display: flex; flex-direction: column; flex-shrink: 0; }
+  .changes-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #2a2a35; font-size: 10px; color: #888; }
+  .changes-header .count { color: #4ade80; font-weight: 500; }
+  .changes-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .change-file { padding: 8px; border-radius: 4px; background: #14141e; border: 1px solid #2a2a35; margin-bottom: 6px; cursor: default; }
+  .change-file .filename { font-size: 11px; color: #e1e1e6; font-weight: 500; }
+  .change-file .diff { font-size: 10px; color: #666; margin-top: 4px; font-family: 'SF Mono', monospace; }
+  .change-file .diff .add { color: #4ade80; }
+  .change-file .diff .del { color: #f44; }
+
+  /* Agent cards at bottom */
+  .agent-bar { display: flex; gap: 8px; padding: 8px 12px; border-top: 1px solid #2a2a35; background: #14141e; }
+  .agent-card { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 6px; background: #1a1a24; border: 1px solid #2a2a35; font-size: 11px; cursor: default; }
+  .agent-card.active { border-color: #7c3aed; background: #1e1a2a; }
+  .agent-card .status-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .agent-card .status-dot.running { background: #4ade80; }
+  .agent-card .status-dot.idle { background: #555; }
+  .agent-card .agent-name { color: #e1e1e6; }
+  .agent-card .task-count { font-size: 9px; color: #666; background: #2a2a35; padding: 0 5px; border-radius: 3px; margin-left: 4px; }
+
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Labels */
+  .label-overlay { position: relative; }
+  .label { position: absolute; font-size: 9px; font-weight: 500; padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
+  .label-sidebar { top: 8px; left: 8px; background: #3b1a6e; color: #c084fc; }
+  .label-terminal { top: 8px; right: 8px; background: #1a3f1a; color: #4ade80; }
+  .label-changes { top: 8px; left: 8px; background: #3f1a1a; color: #f66; }
+  .label-agents { bottom: 8px; right: 8px; background: #1a2a3f; color: #60a5fa; }
+  .label-topbar { top: 8px; left: 8px; background: #2a2a35; color: #c084fc; }
+  .label-memory { bottom: 8px; right: 8px; background: #3b1a6e; color: #c084fc; }
+
+  /* ----- Proposed State ----- */
+  .proposed-state { margin-top: 40px; }
+  .proposed-state h2 { font-size: 14px; color: #4ade80; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+
+  /* Comparison table */
+  .comparison { margin-top: 40px; padding: 20px; background: #181822; border: 1px solid #2a2a35; border-radius: 8px; }
+  .comparison h3 { font-size: 13px; margin-bottom: 16px; color: #e1e1e6; }
+  .comparison table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .comparison th { text-align: left; padding: 8px 12px; color: #888; font-weight: 500; border-bottom: 1px solid #2a2a35; }
+  .comparison td { padding: 8px 12px; border-bottom: 1px solid #1a1a24; color: #a1a1aa; }
+  .comparison td:first-child { color: #e1e1e6; font-weight: 500; }
+  .comparison .check { color: #4ade80; }
+  .comparison .x { color: #f44; }
+  .comparison .warn { color: #facc15; }
+
+  /* Arrow callout */
+  .arrow-callout { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 20px 0; color: #555; font-size: 24px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Mothership UI Redesign <small>v2.0 Wireframe</small></h1>
+  <p class="subtitle">Inspired by Superset.sh — a clean, focused desktop AI agent workspace</p>
+
+  <!-- CURRENT STATE -->
+  <div class="current-state">
+    <h2>✕ Current Mothership <span class="badge badge-red">13 tabs · 3 panels · cluttered</span></h2>
+    <div class="app-frame label-overlay">
+      <span class="label label-topbar">Top Bar: MOTHERSHIP + ThemeToggle + Settings</span>
+      
+      <div class="layout-3panel">
+        <!-- Left sidebar (AgentSidebar) -->
+        <div class="sidebar" style="width: 220px;">
+          <span class="label label-sidebar" style="position: static; display: block; margin-bottom: 8px;">Agent Sidebar</span>
+          <div class="sidebar-section">
+            <h3>CODING · 7</h3>
+            <div class="sidebar-item active" style="cursor: default;">
+              <span class="dot" style="background: #7c3aed;"></span>
+              Claude
+              <span class="count">claude-sonnet-4</span>
+            </div>
+            <div class="sidebar-item" style="cursor: default;">
+              <span class="dot" style="background: #06b6d4;"></span>
+              Codex
+              <span class="count">codex-mini</span>
+            </div>
+            <div class="sidebar-item" style="cursor: default;">
+              <span class="dot" style="background: #f97316;"></span>
+              Gemini
+            </div>
+          </div>
+          <div class="sidebar-section">
+            <h3>RESEARCH · 1</h3>
+            <div class="sidebar-item" style="cursor: default;">
+              <span class="dot" style="background: #7c3aed;"></span>
+              Researcher
+            </div>
+          </div>
+          <div style="padding: 8px; border-top: 1px solid #2a2a35; margin-top: auto;">
+            <div style="font-size: 10px; color: #555; margin-bottom: 6px;">10 agents · 0 active</div>
+            <div style="font-size: 10px; color: #555; border: 1px dashed #2a2a35; padding: 6px; border-radius: 4px; text-align: center;">+ Add Agent</div>
+          </div>
+        </div>
+
+        <!-- Center: Workspace -->
+        <div class="main-content label-overlay">
+          <span class="label label-terminal">Workspace: EmptyState or Terminal</span>
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: #555; font-size: 12px;">
+            <div style="text-align: center;">
+              <div style="font-size: 28px; margin-bottom: 8px;">⌨</div>
+              <div style="color: #888;">No Active Workspace</div>
+              <div style="color: #555; font-size: 10px; margin-top: 4px;">Select an agent from the sidebar to begin</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: MemoryPanel with 13 tabs -->
+        <div class="sidebar" style="width: 200px; border-left: 1px solid #2a2a35; border-right: none;">
+          <span class="label label-memory" style="position: static; display: block; margin-bottom: 8px;">Memory Panel (13 tabs!)</span>
+          <div style="display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 8px;">
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">Notes</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">Context</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">Timeline</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">Search</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">Storage</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">Models</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">WarRoom</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">Graph</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">Browser</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">MCP</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">Exec</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">Perf</span>
+            <span style="font-size: 8px; padding: 2px 5px; background: #2a2a35; border-radius: 3px; color: #888;">Flags</span>
+          </div>
+          <div style="font-size: 10px; color: #555; padding: 4px;">Notes content here...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-callout">⬇ &nbsp; Redesigning to ... &nbsp; ⬇</div>
+
+  <!-- PROPOSED STATE -->
+  <div class="proposed-state">
+    <h2>✓ Proposed Mothership <span class="badge badge-green">Clean top nav · Terminal + Diff · Agent bar</span></h2>
+    <div class="app-frame label-overlay">
+      <!-- Clean top navigation -->
+      <div class="topbar">
+        <span class="logo">⎔ Mothership</span>
+        <div class="nav">
+          <a href="#" class="active">Workspace</a>
+          <a href="#">Agents</a>
+          <a href="#">Memory</a>
+          <a href="#">Automations</a>
+        </div>
+        <div class="actions">
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: #555; margin-right: 8px;">
+            <span class="dot" style="width: 6px; height: 6px; border-radius: 50%; background: #4ade80; display: inline-block;"></span>
+            MCP · 1 connected
+          </div>
+          <button class="btn btn-ghost">⎇ Ports</button>
+          <button class="btn btn-primary">+ New Workspace</button>
+        </div>
+      </div>
+
+      <!-- Main layout: Files sidebar + Terminal + Changes -->
+      <div class="layout-3panel">
+        <!-- Files sidebar (replaces AgentSidebar) -->
+        <div class="sidebar">
+          <div class="sidebar-section">
+            <h3>FILES</h3>
+            <div class="sidebar-item active"><span class="dot" style="background: transparent; width: 0;"></span>📁 src/</div>
+            <div class="sidebar-item" style="padding-left: 20px;">📄 index.ts</div>
+            <div class="sidebar-item" style="padding-left: 20px;">📄 utils.ts</div>
+            <div class="sidebar-item" style="padding-left: 20px;">📄 types.ts</div>
+            <div class="sidebar-item"><span class="dot" style="background: transparent; width: 0;"></span>📁 components/</div>
+          </div>
+          <div class="sidebar-section">
+            <h3>CHANGES <span class="count" style="color: #4ade80;">+128 -45</span></h3>
+            <div class="sidebar-item"><span class="badge-plus">+</span> cloud-workspace.ts</div>
+            <div class="sidebar-item"><span class="badge-plus">+</span> enums.ts</div>
+            <div class="sidebar-item" style="color: #f44;"><span style="color: #f44;">−</span> LegacyTerminalPane.tsx</div>
+          </div>
+          <div class="sidebar-section">
+            <h3>REVIEW <span class="count" style="color: #facc15;">2 pending</span></h3>
+            <div class="sidebar-item" style="font-size: 10px; color: #666;">No pending reviews</div>
+          </div>
+        </div>
+
+        <!-- Terminal + Changes -->
+        <div class="main-content">
+          <!-- Workspace tabs -->
+          <div class="workspace-tabs">
+            <div class="tab active">
+              <span class="pulse"></span>
+              Claude — cloud-ws
+              <span class="close">✕</span>
+            </div>
+            <div class="tab">
+              Codex — api-ws
+              <span class="close">✕</span>
+            </div>
+            <div class="tab">
+              Gemini — ui-ws
+              <span class="close">✕</span>
+            </div>
+          </div>
+
+          <div class="workspace-body">
+            <!-- Terminal -->
+            <div class="terminal-pane">
+              <span class="prompt">$</span> <span class="output">cd ~/project</span><br>
+              <span class="prompt">$</span> <span class="output">npm run dev</span><br>
+              <span style="color: #4ade80;">✓ dev server started on :5173</span><br>
+              <br>
+              <span class="prompt">$</span> <span class="output">git diff --stat</span><br>
+              <span style="color: #888;"> 3 files changed, 128 insertions(+), 45 deletions(-)</span><br>
+              <br>
+              <span class="prompt">$</span> <span class="cursor">▌</span>
+            </div>
+
+            <!-- Changes pane -->
+            <div class="changes-pane">
+              <div class="changes-header">
+                <span>Changes</span>
+                <span class="count">3 files</span>
+              </div>
+              <div class="changes-list">
+                <div class="change-file">
+                  <div class="filename">src/cloud-workspace.ts</div>
+                  <div class="diff">
+                    <span class="add">+119</span> <span class="del">-0</span>
+                  </div>
+                </div>
+                <div class="change-file">
+                  <div class="filename">src/enums.ts</div>
+                  <div class="diff">
+                    <span class="add">+21</span> <span class="del">-0</span>
+                  </div>
+                </div>
+                <div class="change-file">
+                  <div class="filename">src/LegacyTerminalPane.tsx</div>
+                  <div class="diff">
+                    <span class="add">+0</span> <span class="del">-42</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agent bar at bottom -->
+      <div class="agent-bar">
+        <div class="agent-card active">
+          <span class="status-dot running"></span>
+          <span class="agent-name">Claude</span>
+          <span class="task-count">1 running</span>
+        </div>
+        <div class="agent-card">
+          <span class="status-dot idle"></span>
+          <span class="agent-name">Codex</span>
+        </div>
+        <div class="agent-card">
+          <span class="status-dot idle"></span>
+          <span class="agent-name">Gemini</span>
+        </div>
+        <div class="agent-card" style="border-style: dashed; color: #555;">
+          + Add Agent
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPARISON TABLE -->
+  <div class="comparison">
+    <h3>📋 What Changes</h3>
+    <table>
+      <tr>
+        <th style="width: 180px;">Component</th>
+        <th>Current</th>
+        <th>Proposed</th>
+      </tr>
+      <tr>
+        <td>Top bar</td>
+        <td>Logo + ThemeToggle + Settings — no navigation</td>
+        <td><span class="check">✓</span> Clean nav: Workspace · Agents · Memory · Automations</td>
+      </tr>
+      <tr>
+        <td>Left sidebar</td>
+        <td>Agent list with drag handles, categories, model badges</td>
+        <td><span class="check">✓</span> File tree + Changes + Review (like VS Code/Superset)</td>
+      </tr>
+      <tr>
+        <td>Right panel</td>
+        <td>MemoryPanel with 13 tabs (overwhelming)</td>
+        <td><span class="check">✓</span> Removed — Memory is a top nav tab instead</td>
+      </tr>
+      <tr>
+        <td>Workspace</td>
+        <td>Empty "No Active Workspace" or terminal only</td>
+        <td><span class="check">✓</span> Terminal + inline diff viewer side by side</td>
+      </tr>
+      <tr>
+        <td>Agent cards</td>
+        <td><span class="x">✕</span> No quick agent overview (buried in sidebar)</td>
+        <td><span class="check">✓</span> Agent bar at bottom with running/idle status</td>
+      </tr>
+      <tr>
+        <td>Git diffs</td>
+        <td><span class="x">✕</span> Not visible in-app</td>
+        <td><span class="check">✓</span> Inline diff viewer in Changes pane</td>
+      </tr>
+      <tr>
+        <td>MCP status</td>
+        <td>Buried in 13-tab MemoryPanel</td>
+        <td><span class="check">✓</span> Badge in top bar (always visible)</td>
+      </tr>
+      <tr>
+        <td>Port forwarding</td>
+        <td><span class="x">✕</span> Missing</td>
+        <td><span class="warn">~</span> Ports button in top bar</td>
+      </tr>
+      <tr>
+        <td>Inline diffs</td>
+        <td><span class="x">✕</span> Missing (react-diff-viewer installed but unused)</td>
+        <td><span class="check">✓</span> Side-by-side diff view for each changed file</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Summary -->
+  <div style="margin-top: 30px; padding: 20px; background: #1a1a24; border: 1px solid #2a2a35; border-radius: 8px;">
+    <h3 style="font-size: 13px; color: #e1e1e6; margin-bottom: 12px;">Implementation Plan</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 11px; color: #a1a1aa;">
+      <div style="padding: 10px; background: #12121a; border-radius: 6px; border: 1px solid #2a2a35;">
+        <div style="color: #4ade80; font-weight: 500; margin-bottom: 4px;">Phase 1: Layout</div>
+        <div>• Replace 3-panel with top nav</div>
+        <div>• Move sidebar to files/changes</div>
+        <div>• Move memory to a nav tab</div>
+        <div>• Add agent bar at bottom</div>
+      </div>
+      <div style="padding: 10px; background: #12121a; border-radius: 6px; border: 1px solid #2a2a35;">
+        <div style="color: #facc15; font-weight: 500; margin-bottom: 4px;">Phase 2: Features</div>
+        <div>• Inline diff viewer</div>
+        <div>• MCP status badge</div>
+        <div>• Port forwarding UI</div>
+        <div>• Agent card status tracking</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,1 @@
+FINDSTR: Cannot open ^[0-9]*:
