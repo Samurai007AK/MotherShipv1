@@ -53,9 +53,9 @@ Edit `graph.html`:
 
 ### 7. Refresh the generated graph outputs
 
-Make sure `graphify-out/GRAPH_TREE.html` (step 5) and `graph.html` (step 6) reflect the
-latest tree and test counts. (The old `GRAPH.md` maintainer doc was removed; the HTML
-outputs are the graph of record.)
+Make sure `graphify-out/GRAPH_TREE.html` from step 5 and `graph.html` from step 6 reflect the
+latest tree and test counts. The old `GRAPH.md` maintainer doc is gone, so the HTML
+outputs are the graph of record.
 
 ### 8. Report summary
 

@@ -1,6 +1,6 @@
 # Mothership
 
-**Desktop AI Control Center** — Unify browser-based and local AI agents into one memory-aware workspace.
+**Desktop AI Control Center**. Unify browser-based and local AI agents into one memory-aware workspace.
 
 Mothership provides isolated terminal sessions per agent, shared context across tools, session handoff with automatic summarization, and lightweight resource management for low-RAM laptops.
 
@@ -8,24 +8,24 @@ Mothership provides isolated terminal sessions per agent, shared context across 
 
 ## Features
 
-- **Multi-Agent Dashboard** — 10 AI agents (Claude, Codex, Gemini, OpenCode, Researcher, Writer, Debugger, Reviewer, DevOps, Designer) in a unified sidebar
-- **Resizable Three-Panel Layout** — Drag dividers to resize Agent Sidebar, Workspace, and Memory Panel
-- **Light/Dark Theme** — Full theme toggle with CSS variables, system preference detection
-- **Command Palette** — `⌘K` fuzzy search across agents, notes, files, and context
-- **Agent Management** — Drag reorder, add custom agents, status indicators
-- **Memory Panel** — Notes, context history, timeline, search, and cross-agent search
-- **Model Router** — Local LLM inference via Ollama with model discovery and chat
-- **War Room** — Multi-agent broadcast, side-by-side responses, task chaining
-- **Task Graph** — D3.js-powered dependency visualization with drag-and-drop
-- **Browser Connector** — Integrated browser panel with URL bar and navigation
-- **MCP Integration** — Model Context Protocol server support with per-tool kill-switches (fail-closed, persisted)
-- **Onboarding Wizard** — 3-step first-run experience
-- **Sidecar Infrastructure** — Python sidecar management for CrewAI and OpenHands integration
-- **Low-RAM Design** — Tauri 2.x (~10MB vs Electron's ~100MB), session pause/resume
+- **Multi-Agent Dashboard.** 10 AI agents in a unified sidebar: Claude, Codex, Gemini, OpenCode, Researcher, Writer, Debugger, Reviewer, DevOps, and Designer
+- **Resizable Three-Panel Layout**. Drag dividers to resize Agent Sidebar, Workspace, and Memory Panel
+- **Light/Dark Theme**. Full theme toggle with CSS variables, system preference detection
+- **Command Palette**. `⌘K` fuzzy search across agents, notes, files, and context
+- **Agent Management**. Drag reorder, add custom agents, status indicators
+- **Memory Panel**. Notes, context history, timeline, search, and cross-agent search
+- **Model Router**. Local LLM inference via Ollama with model discovery and chat
+- **War Room**. Multi-agent broadcast, side-by-side responses, task chaining
+- **Task Graph**. D3.js-powered dependency visualization with drag-and-drop
+- **Browser Connector**. Integrated browser panel with URL bar and navigation
+- **MCP Integration.** Model Context Protocol server support with per-tool kill-switches that fail closed and persist across restarts
+- **Onboarding Wizard**. 3-step first-run experience
+- **Sidecar Infrastructure**. Python sidecar management for CrewAI and OpenHands integration
+- **Low-RAM Design.** Tauri 2.x at ~10MB against Electron's ~100MB, with session pause/resume
 
 ---
 
-## Tech Stack
+## Tech stack
 
 | Layer | Technology |
 |---|---|
@@ -35,9 +35,9 @@ Mothership provides isolated terminal sessions per agent, shared context across 
 | Styling | Tailwind CSS + CSS Variables |
 | Layout | [react-resizable-panels](https://github.com/bvaughn/react-resizable-panels) |
 | Icons | [Lucide React](https://lucide.dev/) |
-| Terminal | portable-pty (Rust) |
+| Terminal | portable-pty, Rust |
 | Graph | [D3.js](https://d3js.org/) |
-| Database | SQLite via rusqlite (FTS5, WAL mode) |
+| Database | SQLite via rusqlite with FTS5 and WAL mode |
 | Sidecars | Python (JSON-RPC over STDIO) |
 | Testing | Vitest + Playwright + Pytest |
 
@@ -48,10 +48,10 @@ Mothership provides isolated terminal sessions per agent, shared context across 
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/) (stable toolchain)
+- [Rust](https://rustup.rs/), stable toolchain
 - [Tauri CLI](https://tauri.app/) v2
-- [Python](https://python.org/) 3.8+ (for sidecars)
-- [Ollama](https://ollama.com/) (optional, for local LLM inference)
+- [Python](https://python.org/) 3.8+, needed for sidecars
+- [Ollama](https://ollama.com/), optional, serves local LLM inference
 
 ### Install
 
@@ -101,7 +101,7 @@ cd sidecars && python -m pytest tests/
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 Mothership/
@@ -173,19 +173,19 @@ Mothership/
 
 ---
 
-## Current Status
+## Current status
 
 **Version:** 0.1.0
 
-Mothership pairs well with [BossConsole](https://github.com/risa-labs-inc/BossConsole)
-as its operator harness (governed terminals, agent-driven browser, MCP tool layer).
+Mothership works with [BossConsole](https://github.com/risa-labs-inc/BossConsole) as its operator
+console. BOSS supplies governed terminals, an agent-driven browser, and an MCP tool layer.
 See [docs/BOSS_CONSOLE.md](docs/BOSS_CONSOLE.md) for the setup, and
 [docs/USER_GUIDE.md](docs/USER_GUIDE.md) / [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
 for usage and development.
 
 ---
 
-## Keyboard Shortcuts
+## Keyboard shortcuts
 
 | Shortcut | Action |
 |---|---|
@@ -200,10 +200,10 @@ for usage and development.
 
 ## Testing
 
-- **Unit Tests:** 33 tests across 5 test files (Vitest)
-- **Python Tests:** 5 sidecar tests (Pytest)
-- **E2E Tests:** Playwright configured (tests in `tests/e2e/`)
-- **Coverage Target:** 80%+ branches, functions, lines
+- Vitest runs 33 unit tests across 5 test files.
+- Pytest runs 5 sidecar tests.
+- Playwright is configured, with end-to-end tests in `tests/e2e/`.
+- Coverage target is 80%+ for branches, functions, and lines.
 
 ---
 

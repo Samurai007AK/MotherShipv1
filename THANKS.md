@@ -1,14 +1,14 @@
 # Thanks
 
-Mothership's architecture draws inspiration from the following open-source projects. Each has influenced specific design decisions, patterns, or implementation approaches. We stand on their shoulders.
+Mothership's architecture draws inspiration from the following open-source projects. Each has influenced specific design decisions, patterns, or implementation approaches.
 
 ---
 
-## Operator Harness & Governance
+## Operator harness and governance
 
 | Project | What We Learned |
 |---|---|
-| **[BossConsole](https://github.com/risa-labs-inc/BossConsole)** (Apache-2.0) | Per-tool MCP kill-switches (fail-closed, persisted) — mirrored in our MCP panel; loopback-`boss`-server harness documented in `docs/BOSS_CONSOLE.md`; user-scoped secrets + browser autofill as the model for our roadmap |
+| **[BossConsole](https://github.com/risa-labs-inc/BossConsole)** | Per-tool MCP kill-switches that fail closed and persist, mirrored in our MCP panel. Documents the loopback `boss` server harness in `docs/BOSS_CONSOLE.md`. User-scoped secrets with browser autofill set the model for our roadmap. License: Apache-2.0 |
 
 ---
 
