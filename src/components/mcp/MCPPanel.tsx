@@ -24,6 +24,8 @@ export const MCPPanel = memo(function MCPPanel() {
     disconnectServer,
     listTools,
     listResources,
+    toggleToolEnabled,
+    isToolDisabled,
   } = useMCPStore()
 
   const [showAddServer, setShowAddServer] = useState(false)
@@ -237,10 +239,35 @@ export const MCPPanel = memo(function MCPPanel() {
                       {(tools[server.id] || server.tools).map((tool) => (
                         <div
                           key={tool.name}
-                          className="flex items-center gap-2 px-2 py-1 bg-surface-subtle rounded text-[10px]"
+                          className={`flex items-center gap-2 px-2 py-1 bg-surface-subtle rounded text-[10px] ${
+                            isToolDisabled(server.id, tool.name)
+                              ? 'opacity-40'
+                              : ''
+                          }`}
                         >
                           <Wrench className="w-2.5 h-2.5 text-c-secondary" />
-                          <span className="text-c-primary">{tool.name}</span>
+                          <span className="text-c-primary flex-1">
+                            {tool.name}
+                          </span>
+                          <button
+                            onClick={() =>
+                              toggleToolEnabled(server.id, tool.name)
+                            }
+                            className={`px-1.5 py-0.5 rounded text-[9px] transition-colors ${
+                              isToolDisabled(server.id, tool.name)
+                                ? 'text-red-400 hover:text-red-300'
+                                : 'text-green-400 hover:text-green-300'
+                            }`}
+                            title={
+                              isToolDisabled(server.id, tool.name)
+                                ? 'Enable tool (remove kill-switch)'
+                                : 'Disable tool (kill-switch)'
+                            }
+                          >
+                            {isToolDisabled(server.id, tool.name)
+                              ? 'Off'
+                              : 'On'}
+                          </button>
                         </div>
                       ))}
                     </div>

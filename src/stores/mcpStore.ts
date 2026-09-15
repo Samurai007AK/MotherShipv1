@@ -6,11 +6,18 @@ interface MCPState {
   servers: MCPServer[]
   activeServerId: string | null
   clients: Map<string, MCPClient>
+  /** Kill-switches per server id. Mirrors BossConsole's
+   *  `mcp-disabled-tools.json` semantics: exposed = all − disabled. */
+  disabledTools: Record<string, string[]>
 
   // Server actions
   addServer: (server: MCPServer) => void
   removeServer: (id: string) => void
   setActiveServer: (id: string | null) => void
+
+  // Kill-switch actions (BossConsole-inspired governance)
+  toggleToolEnabled: (serverId: string, toolName: string) => void
+  isToolDisabled: (serverId: string, toolName: string) => boolean
 
   // Connection actions
   connectServer: (id: string) => Promise<void>
@@ -29,6 +36,7 @@ export const useMCPStore = create<MCPState>()((set, get) => ({
   servers: [createMockMCP()],
   activeServerId: null,
   clients: new Map(),
+  disabledTools: loadDisabledTools(),
 
   addServer: (server) => {
     set((state) => ({
@@ -49,6 +57,19 @@ export const useMCPStore = create<MCPState>()((set, get) => ({
   },
 
   setActiveServer: (id) => set({ activeServerId: id }),
+
+  toggleToolEnabled: (serverId, toolName) => {
+    const current = get().disabledTools[serverId] ?? []
+    const next = current.includes(toolName)
+      ? current.filter((t) => t !== toolName)
+      : [...current, toolName]
+    const disabledTools = { ...get().disabledTools, [serverId]: next }
+    saveDisabledTools(disabledTools)
+    set({ disabledTools })
+  },
+
+  isToolDisabled: (serverId, toolName) =>
+    (get().disabledTools[serverId] ?? []).includes(toolName),
 
   connectServer: async (id) => {
     const server = get().servers.find((s) => s.id === id)
@@ -90,7 +111,9 @@ export const useMCPStore = create<MCPState>()((set, get) => ({
     const client = get().clients.get(serverId)
     if (!client) return []
     try {
-      return await client.listTools()
+      const tools = await client.listTools()
+      const disabled = get().disabledTools[serverId] ?? []
+      return tools.filter((t) => !disabled.includes(t.name))
     } catch (error) {
       console.error('Failed to list tools:', error)
       return []
@@ -98,6 +121,9 @@ export const useMCPStore = create<MCPState>()((set, get) => ({
   },
 
   callTool: async (serverId, toolName, args) => {
+    if (get().isToolDisabled(serverId, toolName)) {
+      throw new Error(`Tool '${toolName}' is disabled (kill-switch)`)
+    }
     const client = get().clients.get(serverId)
     if (!client) throw new Error('Not connected')
     return client.callTool(toolName, args)
@@ -120,3 +146,21 @@ export const useMCPStore = create<MCPState>()((set, get) => ({
     return client.readResource(uri)
   },
 }))
+
+const DISABLED_TOOLS_KEY = 'mothership-mcp-disabled-tools'
+
+function loadDisabledTools(): Record<string, string[]> {
+  try {
+    const raw = localStorage.getItem(DISABLED_TOOLS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, string[]>
+    if (parsed && typeof parsed === 'object') return parsed
+  } catch {}
+  return {}
+}
+
+function saveDisabledTools(disabled: Record<string, string[]>): void {
+  try {
+    localStorage.setItem(DISABLED_TOOLS_KEY, JSON.stringify(disabled))
+  } catch {}
+}

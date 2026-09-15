@@ -617,5 +617,4 @@ Drag panel dividers to resize. Sizes persist across sessions via localStorage.
 
 - Press `⌘K` and type "help" for quick commands
 - Check the [README](../README.md) for project overview
-- View the [Architecture Guide](../PLANS/ARCHITECTURE.md) for technical details
-- Check the [Troubleshooting Guide](../PLANS/ERROR-HANDLING.md) for known issues
+- See the [Developer Guide](DEVELOPER_GUIDE.md) for architecture and troubleshooting

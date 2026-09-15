@@ -9,6 +9,10 @@ export interface MCPServer {
   capabilities: MCPCapability[]
   tools: MCPTool[]
   resources: MCPResource[]
+  /** Per-tool kill-switches. Tools named here are hidden from listings and
+   *  rejected on call. Inspired by BossConsole's Toolbox → MCP toggles
+   *  (Apache-2.0, risa-labs-inc/BossConsole). */
+  disabledTools?: string[]
 }
 
 export interface MCPCapability {

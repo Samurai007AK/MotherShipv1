@@ -51,12 +51,11 @@ Edit `graph.html`:
 - Add any new test files that aren't in the graph
 - Update the test file list if needed
 
-### 7. Update GRAPH.md
+### 7. Refresh the generated graph outputs
 
-Edit `GRAPH.md`:
-- Update the "Last updated" date
-- Update the totals line: `**Current totals:** X test files, Y tests, Z lines, 0 failures`
-- If App.tsx tests were added, change `⬜ App.tsx — root wiring` to `✅ App.tsx — N tests`
+Make sure `graphify-out/GRAPH_TREE.html` (step 5) and `graph.html` (step 6) reflect the
+latest tree and test counts. (The old `GRAPH.md` maintainer doc was removed; the HTML
+outputs are the graph of record.)
 
 ### 8. Report summary
 

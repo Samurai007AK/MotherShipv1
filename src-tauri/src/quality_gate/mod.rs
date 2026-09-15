@@ -1,7 +1,7 @@
 // src-tauri/src/quality_gate/mod.rs
 //
 // Quality Gate — Pre-commit validation system.
-// Canonical type definitions live in PLANS/MOTHERSHIP-RALPH-GLOSSARY.md.
+// Canonical type definitions live in this module.
 //
 // GateResult = per-gate result with parsed errors (this module)
 // QualityGateSummary = simplified summary for LoopController (loop_controller module)

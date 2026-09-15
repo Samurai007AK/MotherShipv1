@@ -3,7 +3,7 @@
 // Tauri IPC commands — Bridge between the frontend (React/Zustand) and
 // the Rust backend (LoopController, QualityGate, ArchiveManager).
 //
-// Canonical command documentation: PLANS/MOTHERSHIP-RALPH-COMMANDS.md
+// Command handlers live in the submodules below.
 
 pub mod loop_commands;
 pub mod quality_gate_commands;

@@ -18,7 +18,7 @@ Mothership provides isolated terminal sessions per agent, shared context across 
 - **War Room** — Multi-agent broadcast, side-by-side responses, task chaining
 - **Task Graph** — D3.js-powered dependency visualization with drag-and-drop
 - **Browser Connector** — Integrated browser panel with URL bar and navigation
-- **MCP Integration** — Model Context Protocol server support for tool/resource discovery
+- **MCP Integration** — Model Context Protocol server support with per-tool kill-switches (fail-closed, persisted)
 - **Onboarding Wizard** — 3-step first-run experience
 - **Sidecar Infrastructure** — Python sidecar management for CrewAI and OpenHands integration
 - **Low-RAM Design** — Tauri 2.x (~10MB vs Electron's ~100MB), session pause/resume
@@ -167,9 +167,7 @@ Mothership/
 │   └── tests/                        # Pytest tests
 │
 ├── tests/e2e/                        # Playwright E2E tests
-├── PLANS/                            # Phase plans + architecture docs
-├── PLAN.md                           # Master implementation plan
-├── HANDBOOK.md                       # Agent handoff context
+├── docs/                             # User + developer guides, BossConsole harness guide
 └── THANKS.md                         # Open-source attribution
 ```
 
@@ -178,18 +176,12 @@ Mothership/
 ## Current Status
 
 **Version:** 0.1.0
-**Phase:** 4 Complete (Distribution & Polish)
 
-| Phase | Status |
-|---|---|
-| Phase 0 — Foundation | ✅ Complete |
-| Phase 1a — Agent Registry + Terminal | ✅ Complete |
-| Phase 1b — Shared Memory + Context | ✅ Complete |
-| Phase 2 — Enhanced Context & Intelligence | ✅ Complete |
-| Phase 3 — Advanced Features | ✅ Complete |
-| Phase 4 — Distribution & Polish | ✅ Complete |
-
-See [PLAN.md](PLAN.md) for full phase tracking and task details.
+Mothership pairs well with [BossConsole](https://github.com/risa-labs-inc/BossConsole)
+as its operator harness (governed terminals, agent-driven browser, MCP tool layer).
+See [docs/BOSS_CONSOLE.md](docs/BOSS_CONSOLE.md) for the setup, and
+[docs/USER_GUIDE.md](docs/USER_GUIDE.md) / [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
+for usage and development.
 
 ---
 
@@ -217,13 +209,15 @@ See [PLAN.md](PLAN.md) for full phase tracking and task details.
 
 ## Architecture
 
-See [PLANS/ARCHITECTURE.md](PLANS/ARCHITECTURE.md) for the full system architecture, data flow diagrams, and communication protocols.
+See [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) for system architecture, data flow,
+and communication protocols. To develop Mothership inside BossConsole, see
+[docs/BOSS_CONSOLE.md](docs/BOSS_CONSOLE.md).
 
 ---
 
 ## License
 
-Private — not yet published.
+[Apache-2.0](LICENSE). BossConsole-inspired MCP governance is credited in [THANKS.md](THANKS.md).
 
 ---
 

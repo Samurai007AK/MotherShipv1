@@ -1,7 +1,7 @@
 // src-tauri/src/loop_controller/mod.rs
 //
 // Loop Controller — Core autonomous execution engine.
-// Canonical type definitions live in PLANS/MOTHERSHIP-RALPH-GLOSSARY.md.
+// Canonical type definitions live in this module.
 // This module implements the LoopController that runs agentic iterations
 // until all tasks are complete or a stopping condition is met.
 

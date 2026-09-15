@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 
-// --- Types matching PLANS/MOTHERSHIP-RALPH-GLOSSARY.md ---
+// --- Domain types (mirrored in the Rust backend) ---
 
 export interface Task {
   id: string

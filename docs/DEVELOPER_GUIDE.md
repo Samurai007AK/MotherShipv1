@@ -138,10 +138,7 @@ Mothership/
 │   └── tests/                        # Pytest tests
 │
 ├── tests/e2e/                        # Playwright E2E tests
-├── docs/                             # User + Developer guides
-├── PLANS/                            # Architecture + phase docs (33 files)
-├── PLAN.md                           # Master implementation plan
-├── HANDBOOK.md                       # Agent handoff context
+├── docs/                             # User + Developer guides, BossConsole harness guide
 └── THANKS.md                         # Open-source attribution
 ```
 

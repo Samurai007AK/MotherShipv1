@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import {
   useAgentStore,
   getRoleColor,
@@ -200,7 +200,7 @@ export function AgentSidebar() {
     setExecutionStatusMap(prev => ({...prev, [agentId]: 'idle'}))
   }, [])
 
-  const handleDeleteAgent = useCallback((agentId: string) => {
+  const handleDeleteAgent = useCallback((_agentId: string) => {
     // TODO: Implement deletion logic
   }, [])
 
