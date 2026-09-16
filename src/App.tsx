@@ -4,6 +4,9 @@ import { OnboardingWizard } from './components/onboarding/OnboardingWizard'
 import { UpdateBanner } from './components/updater/UpdateBanner'
 import { MenuBar } from './components/layout/MenuBar'
 import { ActivityBar, type ActivityTab } from './components/layout/ActivityBar'
+import { TopBar } from './components/layout/TopBar'
+import { FileSidebar } from './components/layout/FileSidebar'
+import { AgentBar } from './components/layout/AgentBar'
 import { AgentSidebar } from './components/agents/AgentSidebar'
 import { WorkspaceView } from './components/workspace/WorkspaceView'
 import { MemoryPanel } from './components/memory/MemoryPanel'
@@ -123,6 +126,12 @@ export default function App() {
       {/* VS Code-style Menu Bar */}
       <MenuBar onAction={handleMenuAction} />
 
+      {/* Top bar */}
+      <TopBar activeNav={activityTab as 'agents' | 'memory' | 'workspace'} onNavChange={handleActivityTabChange as (tab: string) => void} onPortsClick={() => setShowPortsDialog(true)} />
+
+      {/* File sidebar */}
+      <FileSidebar />
+
       {/* Main content area */}
       <div className="flex flex-1 overflow-hidden">
         {/* Activity Bar — thin left icon strip */}
@@ -158,6 +167,9 @@ export default function App() {
           ) : null}
         </div>
       </div>
+
+      {/* Agent Bar (bottom status bar) */}
+      <AgentBar />
 
       {/* Ports Dialog */}
       <PortsDialog open={showPortsDialog} onClose={() => setShowPortsDialog(false)} />
