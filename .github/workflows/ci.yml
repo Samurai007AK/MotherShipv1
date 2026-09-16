@@ -94,6 +94,9 @@ jobs:
         with:
           workspaces: "src-tauri"
 
+      - name: Placeholder frontend dist
+        run: mkdir -p dist
+
       - name: cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
