@@ -17,8 +17,8 @@ on:
     branches: [main, master]
 
 env:
-  NODE_VERSION: "20"
-  RUST_VERSION: "1.85"
+  NODE_VERSION: "22"
+  RUST_VERSION: "1.88"
   PYTHON_VERSION: "3.12"
 
 jobs:
